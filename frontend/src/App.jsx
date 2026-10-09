@@ -4,6 +4,30 @@ import "./App.css";
 
 const API_URL = "http://127.0.0.1:5000";
 
+const emptyProfile = {
+  name: "",
+  program: "MS Computer Science",
+  year: "",
+  bio: "",
+  interests: "",
+  skills: "",
+  advice_topics: "",
+  completed_courses: "",
+  current_courses: "",
+  willing_to_advise: true,
+};
+
+function coursesToText(courses = []) {
+  return Array.isArray(courses) ? courses.join(", ") : "";
+}
+
+function textToCourses(value) {
+  return value
+    .split(/[,\n]/)
+    .map((courseCode) => courseCode.trim())
+    .filter(Boolean);
+}
+
 function MessageForm({ student }) {
   const [senderName, setSenderName] = useState("");
   const [body, setBody] = useState("");
@@ -58,8 +82,13 @@ function App() {
   const [course, setCourse] = useState("CSC 510");
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [profileForm, setProfileForm] = useState(emptyProfile);
+  const [editingStudentId, setEditingStudentId] = useState(null);
+  const [showProfileForm, setShowProfileForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   async function searchStudents(searchCourse = course) {
     if (!searchCourse.trim()) {
@@ -70,6 +99,7 @@ function App() {
 
     setLoading(true);
     setError("");
+    setNotice("");
     setSelectedStudent(null);
 
     try {
@@ -97,6 +127,7 @@ function App() {
 
   async function viewProfile(studentId) {
     setError("");
+    setNotice("");
 
     try {
       const response = await fetch(
@@ -111,6 +142,117 @@ function App() {
       setSelectedStudent(data.student ?? data);
     } catch {
       setError("Could not load the student's profile.");
+    }
+  }
+
+  function updateProfileField(field, value) {
+    setProfileForm((currentProfile) => ({
+      ...currentProfile,
+      [field]: value,
+    }));
+  }
+
+  function startCreateProfile() {
+    setEditingStudentId(null);
+    setProfileForm({
+      ...emptyProfile,
+      completed_courses: course.trim(),
+    });
+    setShowProfileForm(true);
+    setSelectedStudent(null);
+    setError("");
+    setNotice("");
+  }
+
+  function startEditProfile(student) {
+    setEditingStudentId(student.id);
+    setProfileForm({
+      name: student.name || "",
+      program: student.program || "",
+      year: student.year || "",
+      bio: student.bio || "",
+      interests: student.interests || "",
+      skills: student.skills || "",
+      advice_topics: student.advice_topics || "",
+      completed_courses: coursesToText(student.completed_courses),
+      current_courses: coursesToText(student.current_courses),
+      willing_to_advise: Boolean(student.willing_to_advise),
+    });
+    setShowProfileForm(true);
+    setError("");
+    setNotice("");
+  }
+
+  function closeProfileForm() {
+    setShowProfileForm(false);
+    setEditingStudentId(null);
+    setProfileForm(emptyProfile);
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    setProfileSaving(true);
+    setError("");
+    setNotice("");
+
+    const payload = {
+      ...profileForm,
+      completed_courses: textToCourses(profileForm.completed_courses),
+      current_courses: textToCourses(profileForm.current_courses),
+    };
+
+    try {
+      const response = await fetch(
+        editingStudentId
+          ? `${API_URL}/api/students/${editingStudentId}`
+          : `${API_URL}/api/students`,
+        {
+          method: editingStudentId ? "PUT" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Unable to save profile.");
+
+      setSelectedStudent(data.student);
+      setShowProfileForm(false);
+      setEditingStudentId(null);
+      setProfileForm(emptyProfile);
+      setNotice(editingStudentId ? "Profile updated." : "Profile created.");
+      setStudents((currentStudents) => {
+        const appearsInSearch = payload.completed_courses
+          .map((courseCode) => courseCode.toUpperCase())
+          .includes(course.trim().toUpperCase());
+
+        if (!appearsInSearch || !data.student.willing_to_advise) {
+          return currentStudents.filter(
+            (student) => student.id !== data.student.id
+          );
+        }
+
+        const summary = {
+          id: data.student.id,
+          name: data.student.name,
+          program: data.student.program,
+          year: data.student.year,
+        };
+
+        if (currentStudents.some((student) => student.id === summary.id)) {
+          return currentStudents.map((student) =>
+            student.id === summary.id ? summary : student
+          );
+        }
+
+        return [...currentStudents, summary].sort((first, second) =>
+          first.name.localeCompare(second.name)
+        );
+      });
+    } catch (err) {
+      setError(err.message || "Could not save the student profile.");
+    } finally {
+      setProfileSaving(false);
     }
   }
 
@@ -178,9 +320,177 @@ function App() {
           <p className="search-hint">
             Try searching for CSC 510, CSC 540, or CSC 515.
           </p>
+
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={startCreateProfile}
+          >
+            Create Student Profile
+          </button>
         </section>
 
         {error && <div className="error-message">{error}</div>}
+        {notice && <div className="success-message">{notice}</div>}
+
+        {showProfileForm && (
+          <section className="profile-editor">
+            <div className="profile-heading">
+              <div>
+                <h3>
+                  {editingStudentId
+                    ? "Edit Student Profile"
+                    : "Create Student Profile"}
+                </h3>
+                <p>
+                  Add searchable academic and advice details for PackConnect.
+                </p>
+              </div>
+              <button
+                className="close-button"
+                onClick={closeProfileForm}
+                type="button"
+                aria-label="Close profile editor"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form className="profile-form" onSubmit={saveProfile}>
+              <label>
+                Name
+                <input
+                  value={profileForm.name}
+                  onChange={(event) =>
+                    updateProfileField("name", event.target.value)
+                  }
+                  placeholder="Alex Morgan"
+                  required
+                />
+              </label>
+
+              <label>
+                Program
+                <input
+                  value={profileForm.program}
+                  onChange={(event) =>
+                    updateProfileField("program", event.target.value)
+                  }
+                  placeholder="MS Computer Science"
+                  required
+                />
+              </label>
+
+              <label>
+                Year
+                <input
+                  value={profileForm.year}
+                  onChange={(event) =>
+                    updateProfileField("year", event.target.value)
+                  }
+                  placeholder="Second Year"
+                  required
+                />
+              </label>
+
+              <label>
+                Completed courses
+                <input
+                  value={profileForm.completed_courses}
+                  onChange={(event) =>
+                    updateProfileField(
+                      "completed_courses",
+                      event.target.value
+                    )
+                  }
+                  placeholder="CSC 510, CSC 540"
+                />
+              </label>
+
+              <label>
+                Current courses
+                <input
+                  value={profileForm.current_courses}
+                  onChange={(event) =>
+                    updateProfileField(
+                      "current_courses",
+                      event.target.value
+                    )
+                  }
+                  placeholder="CSC 515, CSC 522"
+                />
+              </label>
+
+              <label>
+                Interests
+                <input
+                  value={profileForm.interests}
+                  onChange={(event) =>
+                    updateProfileField("interests", event.target.value)
+                  }
+                  placeholder="Software Engineering, Databases"
+                />
+              </label>
+
+              <label>
+                Skills
+                <input
+                  value={profileForm.skills}
+                  onChange={(event) =>
+                    updateProfileField("skills", event.target.value)
+                  }
+                  placeholder="React, Python, SQL"
+                />
+              </label>
+
+              <label>
+                Advice topics
+                <input
+                  value={profileForm.advice_topics}
+                  onChange={(event) =>
+                    updateProfileField("advice_topics", event.target.value)
+                  }
+                  placeholder="Workload, Projects, Course Prep"
+                />
+              </label>
+
+              <label className="wide-field">
+                Bio
+                <textarea
+                  value={profileForm.bio}
+                  onChange={(event) =>
+                    updateProfileField("bio", event.target.value)
+                  }
+                  placeholder="Share what kind of course advice you can offer."
+                  rows={4}
+                />
+              </label>
+
+              <label className="checkbox-field wide-field">
+                <input
+                  type="checkbox"
+                  checked={profileForm.willing_to_advise}
+                  onChange={(event) =>
+                    updateProfileField(
+                      "willing_to_advise",
+                      event.target.checked
+                    )
+                  }
+                />
+                Available to give advice
+              </label>
+
+              <div className="form-actions wide-field">
+                <button type="button" onClick={closeProfileForm}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={profileSaving}>
+                  {profileSaving ? "Saving..." : "Save Profile"}
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
 
         <section className="results">
           <div className="section-heading">
@@ -274,6 +584,24 @@ function App() {
                   <p className="profile-bio">{selectedStudent.bio}</p>
                 )}
 
+                {selectedStudent.completed_courses?.length > 0 && (
+                  <div className="profile-tags">
+                    <strong>Completed: </strong>
+                    {selectedStudent.completed_courses.map((courseCode) => (
+                      <span key={courseCode}>{courseCode}</span>
+                    ))}
+                  </div>
+                )}
+
+                {selectedStudent.current_courses?.length > 0 && (
+                  <div className="profile-tags">
+                    <strong>Current: </strong>
+                    {selectedStudent.current_courses.map((courseCode) => (
+                      <span key={courseCode}>{courseCode}</span>
+                    ))}
+                  </div>
+                )}
+
                 {selectedStudent.interests && (
                   <p className="profile-bio">
                     <strong>Interests: </strong>
@@ -283,6 +611,27 @@ function App() {
                   </p>
                 )}
 
+                {selectedStudent.skills && (
+                  <p className="profile-bio">
+                    <strong>Skills: </strong>
+                    {selectedStudent.skills}
+                  </p>
+                )}
+
+                {selectedStudent.advice_topics && (
+                  <p className="profile-bio">
+                    <strong>Can help with: </strong>
+                    {selectedStudent.advice_topics}
+                  </p>
+                )}
+
+                <button
+                  className="profile-button"
+                  type="button"
+                  onClick={() => startEditProfile(selectedStudent)}
+                >
+                  Edit Profile
+                </button>
               </div>
             </div>
             <MessageForm key={selectedStudent.id} student={selectedStudent} />
