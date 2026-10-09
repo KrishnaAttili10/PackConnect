@@ -315,6 +315,42 @@ button {
   font-size: 13px;
 }
 
+.message-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.message-form h4, .message-form p { margin: 0; }
+.message-form label { font-weight: 700; }
+.message-form input, .message-form textarea {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font: inherit;
+}
+.message-form textarea { resize: vertical; }
+.message-form input:focus, .message-form textarea:focus {
+  outline: 2px solid #cc0000;
+  outline-offset: 1px;
+}
+.message-form button {
+  align-self: flex-start;
+  background: #cc0000;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 20px;
+  font-weight: 700;
+}
+.message-form button:disabled { opacity: 0.6; cursor: default; }
+.message-count { color: #6b7280; font-size: 13px; }
+.message-success { color: #166534; }
+
 @media (max-width: 600px) {
   .header-content,
   .section-heading,

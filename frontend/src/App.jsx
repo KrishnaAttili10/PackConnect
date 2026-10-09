@@ -4,11 +4,61 @@ import "./App.css";
 
 const API_URL = "http://127.0.0.1:5000";
 
+function MessageForm({ student }) {
+  const [senderName, setSenderName] = useState("");
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  async function sendMessage(event) {
+    event.preventDefault();
+    if (sending) return;
+    setError("");
+    setSuccess("");
+    if (!senderName.trim() || !body.trim()) {
+      setError("Please enter your name and a message.");
+      return;
+    }
+    setSending(true);
+    try {
+      const response = await fetch(`${API_URL}/api/students/${student.id}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sender_name: senderName.trim(), body: body.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Unable to send message.");
+      setBody("");
+      setSuccess(`Message to ${student.name} saved successfully.`);
+    } catch (err) {
+      setError(err.message || "Could not send your message. Please try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <form className="message-form" onSubmit={sendMessage}>
+      <h4>Send a message to {student.name}</h4>
+      <p className="profile-note">Prototype: messages are saved locally. Student inboxes are not available yet.</p>
+      <label htmlFor="sender-name">Your name</label>
+      <input id="sender-name" value={senderName} onChange={(event) => { setSenderName(event.target.value); setSuccess(""); }} maxLength={100} required disabled={sending} autoComplete="name" />
+      <label htmlFor="message-body">Message</label>
+      <textarea id="message-body" value={body} onChange={(event) => { setBody(event.target.value); setSuccess(""); }} maxLength={2000} required disabled={sending} rows={5} placeholder="Ask about coursework, study tips, or their experience..." aria-describedby="message-count" />
+      <span id="message-count" className="message-count">{body.length}/2000 characters</span>
+      {error && <p className="error-message" role="alert">{error}</p>}
+      {success && <p className="message-success" role="status">{success}</p>}
+      <button type="submit" disabled={sending || !senderName.trim() || !body.trim()}>{sending ? "Sending..." : "Send Message"}</button>
+    </form>
+  );
+}
+
 function App() {
   const [course, setCourse] = useState("CSC 510");
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   async function searchStudents(searchCourse = course) {
@@ -35,7 +85,7 @@ function App() {
 
       const data = await response.json();
       setStudents(Array.isArray(data) ? data : data.students ?? []);
-    } catch (err) {
+    } catch {
       setError(
         "Could not connect to the Flask backend. Make sure it is running on port 5000."
       );
@@ -59,13 +109,27 @@ function App() {
 
       const data = await response.json();
       setSelectedStudent(data.student ?? data);
-    } catch (err) {
+    } catch {
       setError("Could not load the student's profile.");
     }
   }
 
   useEffect(() => {
-    searchStudents("CSC 510");
+    const controller = new AbortController();
+    async function loadStudents() {
+      try {
+        const response = await fetch(`${API_URL}/api/students/search?course=CSC%20510`, { signal: controller.signal });
+        if (!response.ok) throw new Error("Unable to search students.");
+        const data = await response.json();
+        if (!controller.signal.aborted) setStudents(Array.isArray(data) ? data : data.students ?? []);
+      } catch {
+        if (!controller.signal.aborted) setError("Could not connect to the Flask backend. Make sure it is running on port 5000.");
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
+    }
+    loadStudents();
+    return () => controller.abort();
   }, []);
 
   return (
@@ -219,11 +283,9 @@ function App() {
                   </p>
                 )}
 
-                <p className="profile-note">
-                  Messaging will be added in a later development step.
-                </p>
               </div>
             </div>
+            <MessageForm key={selectedStudent.id} student={selectedStudent} />
           </section>
         )}
       </main>

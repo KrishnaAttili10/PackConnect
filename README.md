@@ -2,7 +2,7 @@
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
-> **Project status:** Early working prototype. The current application uses fictional student data for development and demonstration. User accounts, verified course histories, and messaging are not implemented yet.
+> **Project status:** Early working prototype. The current application uses fictional student data for development and demonstration. Messages can be saved locally; user accounts, student inboxes, and verified course histories are not implemented yet.
 
 ## Current features
 
@@ -10,6 +10,7 @@ PackConnect is a student-to-student peer-advice discovery portal being developed
 - Display matching students who opted in to offer advice.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
 - Automatically seed a local SQLite database with sample students on first backend startup.
+- Send an advice message from a student's profile using your name and a message of up to 2,000 characters. Messages are saved in SQLite; there is no inbox or notification delivery yet.
 
 ## Tech stack
 
@@ -125,6 +126,7 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 2. The seeded database should return **Alex Morgan, Jordan Lee, and Sam Patel**.
 3. Click **View Profile** to see a student's details.
 4. Try `CSC 540` or `CSC 515` for other matches.
+5. Open a profile, enter your name and message, and click **Send Message**. Restart the backend after updating so it creates the messages table in your existing database.
 
 ## API endpoints
 
@@ -133,6 +135,7 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 | GET | `/api/health` | Returns `{"status":"ok"}` |
 | GET | `/api/students/search?course=CSC%20510` | Finds opted-in students who completed the specified course |
 | GET | `/api/students/1` | Retrieves a student's full profile |
+| POST | `/api/students/1/messages` | Saves a message; JSON body: `{"sender_name":"Casey","body":"Any study tips?"}` |
 
 Quick browser checks:
 
@@ -147,7 +150,8 @@ Quick browser checks:
 - Flask runs in **debug mode** for local development. Do not deploy the development server to production.
 - SQLite data is local and is **not pushed to GitHub**. Each developer gets their own seeded database.
 - The example students are fictional; no real student information is required for the prototype.
-- Messaging and authentication are planned features, not available in this version.
+- Messaging currently saves messages locally with a self-reported sender name. Authentication, inboxes, and notifications are planned features.
+- Run backend messaging checks with `python -m unittest discover -s backend -p "test_*.py"` and frontend checks with `npm run build` and `npm run lint` from `frontend`.
 
 ## Common troubleshooting
 
