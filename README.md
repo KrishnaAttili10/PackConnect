@@ -2,10 +2,11 @@
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
-> **Project status:** Early working prototype. The current application uses fictional student data for development and demonstration. Messages can be saved locally; user accounts, student inboxes, and verified course histories are not implemented yet.
+> **Project status:** Early working prototype. The application includes fictional sample students and account registration. Messages can be saved locally; login, student inboxes, and verified course histories are not implemented yet.
 
 ## Current features
 
+- Register an account with email, password, and a student profile. Passwords are hashed; emails remain private. Advising is optional.
 - Search for students by an exact course code (for example, `CSC 510`).
 - Display matching students who opted in to offer advice.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
@@ -133,6 +134,7 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 | Method | Endpoint | Description |
 | --- | --- | --- |
 | GET | `/api/health` | Returns `{"status":"ok"}` |
+| POST | `/api/auth/register` | Creates an account and student profile; returns 201, 400 for invalid input, or 409 for a duplicate email |
 | GET | `/api/students/search?course=CSC%20510` | Finds opted-in students who completed the specified course |
 | GET | `/api/students/1` | Retrieves a student's full profile |
 | POST | `/api/students/1/messages` | Saves a message; JSON body: `{"sender_name":"Casey","body":"Any study tips?"}` |
@@ -143,6 +145,12 @@ Quick browser checks:
 - [CSC 510 search](http://127.0.0.1:5000/api/students/search?course=CSC%20510)
 - [Frontend](http://localhost:5173/)
 
+### Account registration
+
+Restart the backend after updating to create the accounts table in your existing database. Click **Create account** in the frontend header. Enter your name, email, a password of 12–128 characters, program, and year. Optional fields include bio, interests, and comma-separated completed courses. Opt in to advising to appear in searches for those courses.
+
+The registration API accepts `name`, `email`, `password`, `program`, and `year`, plus optional `bio`, `interests`, `completed_courses` (an array of course codes), and `willing_to_advise` (a boolean, defaulting to false). Email uniqueness ignores case. Account and profile creation are transactional. Registration does not sign you in; login and email verification are not yet implemented. Course completion is self-reported.
+
 ## Development notes
 
 - The frontend currently calls `http://127.0.0.1:5000` directly. Run Flask on port **5000** unless you also update `API_URL` in `frontend/src/App.jsx`.
@@ -150,7 +158,7 @@ Quick browser checks:
 - Flask runs in **debug mode** for local development. Do not deploy the development server to production.
 - SQLite data is local and is **not pushed to GitHub**. Each developer gets their own seeded database.
 - The example students are fictional; no real student information is required for the prototype.
-- Messaging currently saves messages locally with a self-reported sender name. Authentication, inboxes, and notifications are planned features.
+- Messaging currently saves messages locally with a self-reported sender name. Login, inboxes, and notifications are planned features.
 - Run backend messaging checks with `python -m unittest discover -s backend -p "test_*.py"` and frontend checks with `npm run build` and `npm run lint` from `frontend`.
 
 ## Common troubleshooting
@@ -201,7 +209,7 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 ## Planned improvements
 
-- Student signup/login and profile editing.
+- Student login and profile editing.
 - Course completion reporting and richer course discovery.
 - Connection requests and student-to-student messaging.
 - Improved testing, validation, privacy, and deployment configuration.

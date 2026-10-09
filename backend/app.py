@@ -2,6 +2,8 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import sqlite3
+import re
+from werkzeug.security import generate_password_hash
 from pathlib import Path
 from contextlib import contextmanager
 
@@ -33,6 +35,17 @@ def initialize_database():
                 bio TEXT,
                 interests TEXT,
                 willing_to_advise INTEGER NOT NULL DEFAULT 1
+            )
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL UNIQUE,
+                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (student_id) REFERENCES students(id)
             )
         """)
 
@@ -128,6 +141,59 @@ def initialize_database():
 @app.route("/api/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send a JSON object with your registration details."}), 400
+
+    fields = {}
+    for field, limit in [("name", 100), ("email", 254), ("program", 100),
+                         ("year", 50), ("bio", 2000), ("interests", 500)]:
+        value = data.get(field, "")
+        if not isinstance(value, str) or len(value.strip()) > limit:
+            return jsonify({"error": f"{field.capitalize()} must be text of at most {limit} characters."}), 400
+        fields[field] = value.strip()
+    if not all(fields[field] for field in ("name", "email", "program", "year")):
+        return jsonify({"error": "Name, email, program, and year are required."}), 400
+    email = fields["email"].lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+", email):
+        return jsonify({"error": "Please enter a valid email address."}), 400
+    password = data.get("password")
+    if not isinstance(password, str) or not 12 <= len(password) <= 128:
+        return jsonify({"error": "Password must be between 12 and 128 characters."}), 400
+    willing = data.get("willing_to_advise", False)
+    if not isinstance(willing, bool):
+        return jsonify({"error": "Willing to advise must be true or false."}), 400
+    courses = data.get("completed_courses", [])
+    if (not isinstance(courses, list) or len(courses) > 50
+            or any(not isinstance(course, str) or not course.strip()
+                   or len(course.strip()) > 30 for course in courses)):
+        return jsonify({"error": "Provide up to 50 completed course codes, each at most 30 characters."}), 400
+    courses = sorted({course.strip().upper() for course in courses})
+    password_hash = generate_password_hash(password)
+    try:
+        with get_db() as db:
+            cursor = db.execute("""
+                INSERT INTO students (name, program, year, bio, interests, willing_to_advise)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (fields["name"], fields["program"], fields["year"],
+                  fields["bio"], fields["interests"], int(willing)))
+            student_id = cursor.lastrowid
+            db.execute("""
+                INSERT INTO accounts (student_id, email, password_hash) VALUES (?, ?, ?)
+            """, (student_id, email, password_hash))
+            db.executemany("""
+                INSERT INTO completed_courses (student_id, course_code) VALUES (?, ?)
+            """, [(student_id, course) for course in courses])
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "An account with this email already exists."}), 409
+
+    return jsonify({"student": {"id": student_id, **{key: value for key, value in fields.items()
+                                                    if key != "email"},
+                                "willing_to_advise": willing, "completed_courses": courses}}), 201
 
 
 @app.route("/api/students/search")

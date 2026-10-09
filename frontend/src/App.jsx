@@ -1,6 +1,7 @@
 
 import { useEffect, useState } from "react";
 import "./App.css";
+import RegistrationForm from "./RegistrationForm";
 
 const API_URL = "http://127.0.0.1:5000";
 
@@ -55,6 +56,7 @@ function MessageForm({ student }) {
 }
 
 function App() {
+  const [showRegistration, setShowRegistration] = useState(false);
   const [course, setCourse] = useState("CSC 510");
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
@@ -143,11 +145,15 @@ function App() {
               <p>Learn from students who've been there.</p>
             </div>
           </div>
-          <span className="university">NC State University</span>
+          <div className="header-actions">
+            <span className="university">NC State University</span>
+            <button className="profile-button" aria-expanded={showRegistration} aria-controls="registration" onClick={() => setShowRegistration((shown) => !shown)}>Create account</button>
+          </div>
         </div>
       </header>
 
       <main className="main">
+        {showRegistration && <RegistrationForm apiUrl={API_URL} onClose={() => setShowRegistration(false)} onRegistered={() => searchStudents()} />}
         <section className="hero">
           <span className="eyebrow">STUDENT-TO-STUDENT SUPPORT</span>
           <h2>Find someone who's taken your course.</h2>

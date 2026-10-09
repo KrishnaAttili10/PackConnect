@@ -3,6 +3,19 @@
   box-sizing: border-box;
 }
 
+.header-actions { display: flex; align-items: center; gap: 18px; }
+.registration-panel { max-width: 640px; margin: 0 auto 30px; padding: 25px; background: white; border: 1px solid #e5e7eb; border-radius: 16px; }
+.registration-form fieldset { display: flex; flex-direction: column; gap: 10px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.registration-form p { color: #6b7280; line-height: 1.6; }
+.registration-form label { font-weight: 700; }
+.registration-form input, .registration-form textarea { width: 100%; padding: 12px; border: 1px solid #d1d5db; border-radius: 8px; font: inherit; }
+.registration-form textarea { resize: vertical; }
+.registration-form input:focus, .registration-form textarea:focus { outline: 2px solid #cc0000; outline-offset: 1px; }
+.registration-form .checkbox-label { display: flex; align-items: flex-start; gap: 10px; margin: 10px 0; }
+.registration-form input[type="checkbox"] { width: auto; margin-top: 4px; accent-color: #cc0000; }
+.register-submit { background: #cc0000; color: white; border: 0; border-radius: 8px; padding: 12px 20px; font-weight: 700; margin-top: 16px; }
+.register-submit:disabled { opacity: 0.6; cursor: wait; }
+
 body {
   margin: 0;
   font-family: Inter, Arial, sans-serif;
