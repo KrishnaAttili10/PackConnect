@@ -283,23 +283,58 @@ def create_student():
 @app.route("/api/students/search")
 def search_students():
     course = request.args.get("course", "").strip().upper()
+    program = request.args.get("program", "").strip()
+    year = request.args.get("year", "").strip()
+    skills = request.args.get("skills", "").strip()
+    advice_topics = request.args.get("advice_topics", "").strip()
+    available = request.args.get("available", "true").strip().lower()
 
-    if not course:
+    if not any((course, program, year, skills, advice_topics)):
         return jsonify({"students": []})
 
+    conditions = []
+    parameters = []
+
+    if course:
+        conditions.append("""
+            EXISTS (
+                SELECT 1
+                FROM completed_courses c
+                WHERE c.student_id = s.id
+                  AND UPPER(c.course_code) = ?
+            )
+        """)
+        parameters.append(course)
+
+    if available != "false":
+        conditions.append("s.willing_to_advise = 1")
+
+    for column, value in (
+        ("s.program", program),
+        ("s.year", year),
+        ("s.skills", skills),
+        ("s.advice_topics", advice_topics),
+    ):
+        if value:
+            conditions.append(f"LOWER(COALESCE({column}, '')) LIKE ?")
+            parameters.append(f"%{value.lower()}%")
+
+    where_clause = " AND ".join(conditions) if conditions else "1 = 1"
+
     with get_db() as db:
-        rows = db.execute("""
+        rows = db.execute(f"""
             SELECT DISTINCT
                 s.id,
                 s.name,
                 s.program,
-                s.year
+                s.year,
+                s.skills,
+                s.advice_topics,
+                s.willing_to_advise
             FROM students s
-            JOIN completed_courses c ON s.id = c.student_id
-            WHERE UPPER(c.course_code) = ?
-              AND s.willing_to_advise = 1
+            WHERE {where_clause}
             ORDER BY s.name
-        """, (course,)).fetchall()
+        """, parameters).fetchall()
 
     return jsonify({
         "students": [dict(row) for row in rows]

@@ -134,6 +134,63 @@ button {
   cursor: wait;
 }
 
+.filter-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+  gap: 12px;
+  align-items: end;
+  max-width: 980px;
+  margin: 18px auto 0;
+  text-align: left;
+}
+
+.filter-panel label {
+  color: #374151;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.filter-panel input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  background: white;
+  padding: 11px;
+}
+
+.filter-panel input:focus {
+  outline: 2px solid #cc0000;
+  outline-offset: 1px;
+}
+
+.filter-panel .filter-checkbox {
+  align-items: center;
+  flex-direction: row;
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.filter-panel .filter-checkbox input {
+  width: auto;
+}
+
+.filter-panel button {
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  background: white;
+  color: #374151;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.filter-panel button:hover {
+  background: #f9fafb;
+}
+
 .hero .search-hint {
   font-size: 13px;
   margin-top: 12px;
@@ -500,6 +557,10 @@ button {
 
   .search-form {
     flex-direction: column;
+  }
+
+  .filter-panel {
+    grid-template-columns: 1fr;
   }
 
   .profile-form {

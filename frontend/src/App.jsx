@@ -17,6 +17,14 @@ const emptyProfile = {
   willing_to_advise: true,
 };
 
+const emptyFilters = {
+  program: "",
+  year: "",
+  skills: "",
+  advice_topics: "",
+  availableOnly: true,
+};
+
 function coursesToText(courses = []) {
   return Array.isArray(courses) ? courses.join(", ") : "";
 }
@@ -80,6 +88,7 @@ function MessageForm({ student }) {
 
 function App() {
   const [course, setCourse] = useState("CSC 510");
+  const [filters, setFilters] = useState(emptyFilters);
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [profileForm, setProfileForm] = useState(emptyProfile);
@@ -90,9 +99,41 @@ function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  async function searchStudents(searchCourse = course) {
-    if (!searchCourse.trim()) {
-      setError("Please enter a course code.");
+  function searchUrl(searchCourse = course, searchFilters = filters) {
+    const params = new URLSearchParams();
+
+    if (searchCourse.trim()) params.set("course", searchCourse.trim());
+    if (searchFilters.program.trim()) {
+      params.set("program", searchFilters.program.trim());
+    }
+    if (searchFilters.year.trim()) params.set("year", searchFilters.year.trim());
+    if (searchFilters.skills.trim()) {
+      params.set("skills", searchFilters.skills.trim());
+    }
+    if (searchFilters.advice_topics.trim()) {
+      params.set("advice_topics", searchFilters.advice_topics.trim());
+    }
+    params.set("available", String(searchFilters.availableOnly));
+
+    return `${API_URL}/api/students/search?${params.toString()}`;
+  }
+
+  function hasSearchCriteria(searchCourse = course, searchFilters = filters) {
+    return Boolean(
+      searchCourse.trim() ||
+        searchFilters.program.trim() ||
+        searchFilters.year.trim() ||
+        searchFilters.skills.trim() ||
+        searchFilters.advice_topics.trim()
+    );
+  }
+
+  async function searchStudents(
+    searchCourse = course,
+    searchFilters = filters
+  ) {
+    if (!hasSearchCriteria(searchCourse, searchFilters)) {
+      setError("Please enter a course code or at least one filter.");
       setStudents([]);
       return;
     }
@@ -103,11 +144,7 @@ function App() {
     setSelectedStudent(null);
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/students/search?course=${encodeURIComponent(
-          searchCourse.trim()
-        )}`
-      );
+      const response = await fetch(searchUrl(searchCourse, searchFilters));
 
       if (!response.ok) {
         throw new Error("Unable to search students.");
@@ -151,6 +188,44 @@ function App() {
       [field]: value,
     }));
   }
+
+  function updateFilter(field, value) {
+    setFilters((currentFilters) => ({
+      ...currentFilters,
+      [field]: value,
+    }));
+  }
+
+  function resetFilters() {
+    const resetState = { ...emptyFilters };
+    setFilters(resetState);
+    searchStudents(course, resetState);
+  }
+
+  function profileMatchesSearch(student, completedCourses) {
+    const normalizedCourse = course.trim().toUpperCase();
+    const hasCourseMatch =
+      !normalizedCourse ||
+      completedCourses
+        .map((courseCode) => courseCode.toUpperCase())
+        .includes(normalizedCourse);
+
+    const containsFilter = (value, filterValue) =>
+      !filterValue.trim() ||
+      String(value || "")
+        .toLowerCase()
+        .includes(filterValue.trim().toLowerCase());
+
+    return (
+      hasCourseMatch &&
+      (!filters.availableOnly || student.willing_to_advise) &&
+      containsFilter(student.program, filters.program) &&
+      containsFilter(student.year, filters.year) &&
+      containsFilter(student.skills, filters.skills) &&
+      containsFilter(student.advice_topics, filters.advice_topics)
+    );
+  }
+
 
   function startCreateProfile() {
     setEditingStudentId(null);
@@ -222,11 +297,7 @@ function App() {
       setProfileForm(emptyProfile);
       setNotice(editingStudentId ? "Profile updated." : "Profile created.");
       setStudents((currentStudents) => {
-        const appearsInSearch = payload.completed_courses
-          .map((courseCode) => courseCode.toUpperCase())
-          .includes(course.trim().toUpperCase());
-
-        if (!appearsInSearch || !data.student.willing_to_advise) {
+        if (!profileMatchesSearch(data.student, payload.completed_courses)) {
           return currentStudents.filter(
             (student) => student.id !== data.student.id
           );
@@ -260,7 +331,10 @@ function App() {
     const controller = new AbortController();
     async function loadStudents() {
       try {
-        const response = await fetch(`${API_URL}/api/students/search?course=CSC%20510`, { signal: controller.signal });
+        const response = await fetch(
+          `${API_URL}/api/students/search?course=CSC%20510&available=true`,
+          { signal: controller.signal }
+        );
         if (!response.ok) throw new Error("Unable to search students.");
         const data = await response.json();
         if (!controller.signal.aborted) setStudents(Array.isArray(data) ? data : data.students ?? []);
@@ -316,6 +390,65 @@ function App() {
               {loading ? "Searching..." : "Find Students"}
             </button>
           </form>
+
+          <div className="filter-panel" aria-label="Search filters">
+            <label>
+              Program
+              <input
+                value={filters.program}
+                onChange={(event) =>
+                  updateFilter("program", event.target.value)
+                }
+                placeholder="MS Computer Science"
+              />
+            </label>
+
+            <label>
+              Year
+              <input
+                value={filters.year}
+                onChange={(event) => updateFilter("year", event.target.value)}
+                placeholder="Second Year"
+              />
+            </label>
+
+            <label>
+              Skills
+              <input
+                value={filters.skills}
+                onChange={(event) =>
+                  updateFilter("skills", event.target.value)
+                }
+                placeholder="React, Python"
+              />
+            </label>
+
+            <label>
+              Advice topics
+              <input
+                value={filters.advice_topics}
+                onChange={(event) =>
+                  updateFilter("advice_topics", event.target.value)
+                }
+                placeholder="Projects, Workload"
+              />
+            </label>
+
+            <label className="filter-checkbox">
+              <input
+                type="checkbox"
+                checked={filters.availableOnly}
+                onChange={(event) =>
+                  updateFilter("availableOnly", event.target.checked)
+                }
+              />
+              Available only
+            </label>
+
+            <button type="button" onClick={resetFilters}>
+              Reset
+            </button>
+          </div>
 
           <p className="search-hint">
             Try searching for CSC 510, CSC 540, or CSC 515.
@@ -533,8 +666,16 @@ function App() {
                     <p className="student-year">{student.year}</p>
                   )}
 
+                  {student.advice_topics && (
+                    <p className="student-year">
+                      Can help with {student.advice_topics}
+                    </p>
+                  )}
+
                   <span className="available-badge">
-                    ✓ Willing to share advice
+                    {student.willing_to_advise
+                      ? "✓ Willing to share advice"
+                      : "Not currently available"}
                   </span>
 
                   <button
