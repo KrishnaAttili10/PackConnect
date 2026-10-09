@@ -25,6 +25,14 @@ const emptyFilters = {
   availableOnly: true,
 };
 
+const emptyConnectionRequest = {
+  requester_name: "",
+  requester_email: "",
+  course_code: "",
+  advice_topic: "",
+  message: "",
+};
+
 function coursesToText(courses = []) {
   return Array.isArray(courses) ? courses.join(", ") : "";
 }
@@ -86,6 +94,220 @@ function MessageForm({ student }) {
   );
 }
 
+function ConnectionRequestForm({ student, defaultCourse, onRequestCreated }) {
+  const [requestForm, setRequestForm] = useState({
+    ...emptyConnectionRequest,
+    course_code: defaultCourse,
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  function updateRequestField(field, value) {
+    setRequestForm((currentForm) => ({
+      ...currentForm,
+      [field]: value,
+    }));
+  }
+
+  async function submitRequest(event) {
+    event.preventDefault();
+    if (submitting) return;
+
+    setError("");
+    setSuccess("");
+    setSubmitting(true);
+
+    try {
+      const request = {
+        id: crypto.randomUUID(),
+        student_id: student.id,
+        student_name: student.name,
+        requester_name: requestForm.requester_name.trim(),
+        requester_email: requestForm.requester_email.trim(),
+        course_code: requestForm.course_code.trim().toUpperCase(),
+        advice_topic: requestForm.advice_topic.trim(),
+        message: requestForm.message.trim(),
+        status: "pending",
+        created_at: new Date().toISOString(),
+      };
+
+      setSuccess(`Request sent to ${student.name}.`);
+      setRequestForm({
+        ...emptyConnectionRequest,
+        course_code: defaultCourse,
+      });
+      onRequestCreated(request);
+    } catch (err) {
+      setError(err.message || "Could not send the request.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form className="request-form" onSubmit={submitRequest}>
+      <h4>Request advice from {student.name}</h4>
+      <p className="profile-note">
+        Send context first. Messaging should happen after the request is accepted.
+      </p>
+
+      <div className="request-grid">
+        <label>
+          Your name
+          <input
+            value={requestForm.requester_name}
+            onChange={(event) =>
+              updateRequestField("requester_name", event.target.value)
+            }
+            maxLength={100}
+            required
+            disabled={submitting}
+          />
+        </label>
+
+        <label>
+          Email
+          <input
+            type="email"
+            value={requestForm.requester_email}
+            onChange={(event) =>
+              updateRequestField("requester_email", event.target.value)
+            }
+            maxLength={160}
+            disabled={submitting}
+          />
+        </label>
+
+        <label>
+          Course
+          <input
+            value={requestForm.course_code}
+            onChange={(event) =>
+              updateRequestField("course_code", event.target.value)
+            }
+            placeholder="CSC 510"
+            maxLength={30}
+            required
+            disabled={submitting}
+          />
+        </label>
+
+        <label>
+          Advice topic
+          <input
+            value={requestForm.advice_topic}
+            onChange={(event) =>
+              updateRequestField("advice_topic", event.target.value)
+            }
+            placeholder="Projects, workload, prep"
+            maxLength={80}
+            required
+            disabled={submitting}
+          />
+        </label>
+
+        <label className="wide-field">
+          Message
+          <textarea
+            value={requestForm.message}
+            onChange={(event) =>
+              updateRequestField("message", event.target.value)
+            }
+            placeholder="Share what you want help with and why this student seems relevant."
+            maxLength={1000}
+            rows={4}
+            required
+            disabled={submitting}
+          />
+        </label>
+      </div>
+
+      {error && <p className="error-message" role="alert">{error}</p>}
+      {success && <p className="message-success" role="status">{success}</p>}
+
+      <button
+        type="submit"
+        disabled={
+          submitting ||
+          !requestForm.requester_name.trim() ||
+          !requestForm.course_code.trim() ||
+          !requestForm.advice_topic.trim() ||
+          !requestForm.message.trim()
+        }
+      >
+        {submitting ? "Sending..." : "Send Request"}
+      </button>
+    </form>
+  );
+}
+
+function RequestReviewPanel({ requests, loading, onStatusChange, onRefresh }) {
+  return (
+    <section className="request-panel">
+      <div className="section-heading">
+        <div>
+          <h3>Advice requests</h3>
+          <p>Frontend-only prototype until requests belong to Supabase accounts.</p>
+        </div>
+        <button type="button" onClick={onRefresh}>
+          Clear handled
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="empty-state">Loading requests...</p>
+      ) : requests.length === 0 ? (
+        <p className="empty-state">No advice requests yet.</p>
+      ) : (
+        <div className="request-list">
+          {requests.map((request) => (
+            <article className="request-card" key={request.id}>
+              <div>
+                <div className="request-card-header">
+                  <strong>{request.requester_name}</strong>
+                  <span className={`status-badge ${request.status}`}>
+                    {request.status}
+                  </span>
+                </div>
+                <p>
+                  wants advice from <strong>{request.student_name}</strong> for{" "}
+                  <strong>{request.course_code}</strong>
+                </p>
+                <p>
+                  <strong>Topic: </strong>
+                  {request.advice_topic}
+                </p>
+                <p>{request.message}</p>
+                {request.requester_email && (
+                  <p className="profile-note">{request.requester_email}</p>
+                )}
+              </div>
+
+              {request.status === "pending" && (
+                <div className="request-actions">
+                  <button
+                    type="button"
+                    onClick={() => onStatusChange(request.id, "accepted")}
+                  >
+                    Accept
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onStatusChange(request.id, "declined")}
+                  >
+                    Decline
+                  </button>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function App() {
   const [course, setCourse] = useState("CSC 510");
   const [filters, setFilters] = useState(emptyFilters);
@@ -95,6 +317,8 @@ function App() {
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [showProfileForm, setShowProfileForm] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [requests, setRequests] = useState([]);
+  const [requestsLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -180,6 +404,27 @@ function App() {
     } catch {
       setError("Could not load the student's profile.");
     }
+  }
+
+  function addConnectionRequest(request) {
+    setRequests((currentRequests) => [request, ...currentRequests]);
+  }
+
+  function updateConnectionRequestStatus(requestId, status) {
+    setError("");
+    setNotice("");
+    setRequests((currentRequests) =>
+      currentRequests.map((request) =>
+        request.id === requestId ? { ...request, status } : request
+      )
+    );
+    setNotice(`Request ${status}.`);
+  }
+
+  function clearHandledRequests() {
+    setRequests((currentRequests) =>
+      currentRequests.filter((request) => request.status === "pending")
+    );
   }
 
   function updateProfileField(field, value) {
@@ -465,6 +710,13 @@ function App() {
 
         {error && <div className="error-message">{error}</div>}
         {notice && <div className="success-message">{notice}</div>}
+
+        <RequestReviewPanel
+          requests={requests}
+          loading={requestsLoading}
+          onStatusChange={updateConnectionRequestStatus}
+          onRefresh={clearHandledRequests}
+        />
 
         {showProfileForm && (
           <section className="profile-editor">
@@ -775,7 +1027,13 @@ function App() {
                 </button>
               </div>
             </div>
-            <MessageForm key={selectedStudent.id} student={selectedStudent} />
+            <ConnectionRequestForm
+              key={`request-${selectedStudent.id}`}
+              student={selectedStudent}
+              defaultCourse={course}
+              onRequestCreated={addConnectionRequest}
+            />
+            <MessageForm key={`message-${selectedStudent.id}`} student={selectedStudent} />
           </section>
         )}
       </main>

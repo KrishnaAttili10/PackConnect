@@ -343,6 +343,90 @@ button {
   margin-top: 30px;
 }
 
+.request-panel {
+  margin: 10px 0 30px;
+}
+
+.request-panel .section-heading button {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.request-list {
+  display: grid;
+  gap: 14px;
+}
+
+.request-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+}
+
+.request-card p {
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.request-card-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.status-badge {
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+  text-transform: capitalize;
+}
+
+.status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.accepted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.declined {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.request-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.request-actions button {
+  align-self: flex-start;
+  border: 1px solid #cc0000;
+  border-radius: 8px;
+  background: white;
+  color: #cc0000;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.request-actions button:first-child {
+  background: #cc0000;
+  color: white;
+}
+
 .profile-heading {
   display: flex;
   justify-content: space-between;
@@ -517,20 +601,58 @@ button {
   border-top: 1px solid #e5e7eb;
 }
 
-.message-form h4, .message-form p { margin: 0; }
-.message-form label { font-weight: 700; }
-.message-form input, .message-form textarea {
+.request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.request-form h4,
+.request-form p,
+.message-form h4,
+.message-form p {
+  margin: 0;
+}
+
+.request-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.request-form label,
+.message-form label {
+  font-weight: 700;
+}
+
+.request-form input,
+.request-form textarea,
+.message-form input,
+.message-form textarea {
   width: 100%;
   padding: 12px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font: inherit;
 }
-.message-form textarea { resize: vertical; }
-.message-form input:focus, .message-form textarea:focus {
+
+.request-form textarea,
+.message-form textarea {
+  resize: vertical;
+}
+
+.request-form input:focus,
+.request-form textarea:focus,
+.message-form input:focus,
+.message-form textarea:focus {
   outline: 2px solid #cc0000;
   outline-offset: 1px;
 }
+
+.request-form button,
 .message-form button {
   align-self: flex-start;
   background: #cc0000;
@@ -540,7 +662,13 @@ button {
   padding: 12px 20px;
   font-weight: 700;
 }
-.message-form button:disabled { opacity: 0.6; cursor: default; }
+
+.request-form button:disabled,
+.message-form button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .message-count { color: #6b7280; font-size: 13px; }
 .message-success { color: #166534; }
 
@@ -576,6 +704,16 @@ button {
   }
 
   .profile-content {
+    flex-direction: column;
+  }
+
+  .request-card {
+    flex-direction: column;
+  }
+
+  .request-actions,
+  .request-grid {
+    grid-template-columns: 1fr;
     flex-direction: column;
   }
 }
