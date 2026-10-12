@@ -7,6 +7,20 @@ from werkzeug.security import generate_password_hash
 from pathlib import Path
 from contextlib import contextmanager
 
+import os
+from dotenv import load_dotenv
+from supabase import create_client
+
+load_dotenv(Path(__file__).parent / ".env")
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
+
+if not SUPABASE_URL or not SUPABASE_SECRET_KEY:
+    raise RuntimeError("Supabase credentials are missing from backend/.env")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
+
 app = Flask(__name__)
 CORS(app)
 
