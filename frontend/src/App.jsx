@@ -1,9 +1,141 @@
-
 import { useEffect, useState } from "react";
 import "./App.css";
 import RegistrationForm from "./RegistrationForm";
 
 const API_URL = "http://127.0.0.1:5000";
+
+function EditProfileForm({ student, onUpdateSuccess, onCancel }) {
+  const [formData, setFormData] = useState({
+    name: student.name || "",
+    program: student.program || "",
+    year: student.year || "",
+    bio: student.bio || "",
+    interests: Array.isArray(student.interests)
+      ? student.interests.join(", ")
+      : student.interests || "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function handleChange(event) {
+    const { name, value } = event.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (saving) return;
+    setError("");
+
+    if (!formData.name.trim()) {
+      setError("Name is required.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      const response = await fetch(`${API_URL}/api/students/${student.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...formData,
+          name: formData.name.trim(),
+          program: formData.program.trim(),
+          year: formData.year.trim(),
+          bio: formData.bio.trim(),
+          interests: formData.interests
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to update profile.");
+      }
+
+      onUpdateSuccess(data.student ?? data);
+    } catch (err) {
+      setError(err.message || "Could not update profile. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="edit-profile-form" onSubmit={handleSubmit}>
+      <h4>Edit Profile</h4>
+
+      <label htmlFor="edit-name">Name</label>
+      <input
+        id="edit-name"
+        name="name"
+        type="text"
+        value={formData.name}
+        onChange={handleChange}
+        required
+        disabled={saving}
+      />
+
+      <label htmlFor="edit-program">Program / Major</label>
+      <input
+        id="edit-program"
+        name="program"
+        type="text"
+        value={formData.program}
+        onChange={handleChange}
+        placeholder="e.g. Computer Science"
+        disabled={saving}
+      />
+
+      <label htmlFor="edit-year">Year</label>
+      <input
+        id="edit-year"
+        name="year"
+        type="text"
+        value={formData.year}
+        onChange={handleChange}
+        placeholder="e.g. Senior, Graduate Student"
+        disabled={saving}
+      />
+
+      <label htmlFor="edit-bio">Bio</label>
+      <textarea
+        id="edit-bio"
+        name="bio"
+        value={formData.bio}
+        onChange={handleChange}
+        rows={3}
+        placeholder="Tell peers about your academic interests or advice..."
+        disabled={saving}
+      />
+
+      <label htmlFor="edit-interests">Interests (comma-separated)</label>
+      <input
+        id="edit-interests"
+        name="interests"
+        type="text"
+        value={formData.interests}
+        onChange={handleChange}
+        placeholder="e.g. Web Dev, Machine Learning, Algorithms"
+        disabled={saving}
+      />
+
+      {error && <p className="error-message" role="alert">{error}</p>}
+
+      <div className="form-actions">
+        <button type="button" className="secondary-button" onClick={onCancel} disabled={saving}>
+          Cancel
+        </button>
+        <button type="submit" disabled={saving}>
+          {saving ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
+    </form>
+  );
+}
 
 function MessageForm({ student }) {
   const [senderName, setSenderName] = useState("");
@@ -60,6 +192,7 @@ function App() {
   const [course, setCourse] = useState("CSC 510");
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -73,6 +206,7 @@ function App() {
     setLoading(true);
     setError("");
     setSelectedStudent(null);
+    setIsEditingProfile(false);
 
     try {
       const response = await fetch(
@@ -99,6 +233,7 @@ function App() {
 
   async function viewProfile(studentId) {
     setError("");
+    setIsEditingProfile(false);
 
     try {
       const response = await fetch(
@@ -114,6 +249,14 @@ function App() {
     } catch {
       setError("Could not load the student's profile.");
     }
+  }
+
+  function handleProfileUpdate(updatedStudent) {
+    setSelectedStudent(updatedStudent);
+    setIsEditingProfile(false);
+    setStudents((prevStudents) =>
+      prevStudents.map((s) => (s.id === updatedStudent.id ? updatedStudent : s))
+    );
   }
 
   useEffect(() => {
@@ -251,47 +394,66 @@ function App() {
               <h3>Student Profile</h3>
               <button
                 className="close-button"
-                onClick={() => setSelectedStudent(null)}
+                onClick={() => {
+                  setSelectedStudent(null);
+                  setIsEditingProfile(false);
+                }}
                 aria-label="Close profile"
               >
                 ✕
               </button>
             </div>
 
-            <div className="profile-content">
-              <div className="avatar large-avatar">
-                {selectedStudent.name
-                  ?.split(" ")
-                  .map((part) => part[0])
-                  .slice(0, 2)
-                  .join("")}
-              </div>
+            {isEditingProfile ? (
+              <EditProfileForm
+                student={selectedStudent}
+                onUpdateSuccess={handleProfileUpdate}
+                onCancel={() => setIsEditingProfile(false)}
+              />
+            ) : (
+              <>
+                <div className="profile-content">
+                  <div className="avatar large-avatar">
+                    {selectedStudent.name
+                      ?.split(" ")
+                      .map((part) => part[0])
+                      .slice(0, 2)
+                      .join("")}
+                  </div>
 
-              <div>
-                <h4>{selectedStudent.name}</h4>
-                <p>
-                  {selectedStudent.program || "NC State Student"}
-                  {selectedStudent.year
-                    ? ` · ${selectedStudent.year}`
-                    : ""}
-                </p>
+                  <div>
+                    <h4>{selectedStudent.name}</h4>
+                    <p>
+                      {selectedStudent.program || "NC State Student"}
+                      {selectedStudent.year
+                        ? ` · ${selectedStudent.year}`
+                        : ""}
+                    </p>
 
-                {selectedStudent.bio && (
-                  <p className="profile-bio">{selectedStudent.bio}</p>
-                )}
+                    {selectedStudent.bio && (
+                      <p className="profile-bio">{selectedStudent.bio}</p>
+                    )}
 
-                {selectedStudent.interests && (
-                  <p className="profile-bio">
-                    <strong>Interests: </strong>
-                    {Array.isArray(selectedStudent.interests)
-                      ? selectedStudent.interests.join(", ")
-                      : selectedStudent.interests}
-                  </p>
-                )}
+                    {selectedStudent.interests && (
+                      <p className="profile-bio">
+                        <strong>Interests: </strong>
+                        {Array.isArray(selectedStudent.interests)
+                          ? selectedStudent.interests.join(", ")
+                          : selectedStudent.interests}
+                      </p>
+                    )}
 
-              </div>
-            </div>
-            <MessageForm key={selectedStudent.id} student={selectedStudent} />
+                    <button
+                      className="edit-profile-btn"
+                      onClick={() => setIsEditingProfile(true)}
+                    >
+                      ✏️ Edit Profile
+                    </button>
+                  </div>
+                </div>
+                <MessageForm key={selectedStudent.id} student={selectedStudent} />
+              </>
+            )}
           </section>
         )}
       </main>
