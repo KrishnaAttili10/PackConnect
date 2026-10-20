@@ -24,7 +24,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -146,9 +147,80 @@ button {
   cursor: wait;
 }
 
+.filter-panel {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto auto;
+  gap: 12px;
+  align-items: end;
+  max-width: 980px;
+  margin: 18px auto 0;
+  text-align: left;
+}
+
+.filter-panel label {
+  color: #374151;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.filter-panel input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  background: white;
+  padding: 11px;
+}
+
+.filter-panel input:focus {
+  outline: 2px solid #cc0000;
+  outline-offset: 1px;
+}
+
+.filter-panel .filter-checkbox {
+  align-items: center;
+  flex-direction: row;
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.filter-panel .filter-checkbox input {
+  width: auto;
+}
+
+.filter-panel button {
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  background: white;
+  color: #374151;
+  font-weight: 700;
+  min-height: 42px;
+  padding: 0 14px;
+}
+
+.filter-panel button:hover {
+  background: #f9fafb;
+}
+
 .hero .search-hint {
   font-size: 13px;
   margin-top: 12px;
+}
+
+.secondary-action {
+  margin-top: 8px;
+  border: 1px solid #cc0000;
+  border-radius: 8px;
+  background: white;
+  color: #cc0000;
+  font-weight: 700;
+  padding: 11px 16px;
+}
+
+.secondary-action:hover {
+  background: #fff1f2;
 }
 
 .results {
@@ -190,7 +262,8 @@ button {
 }
 
 .student-card,
-.profile-panel {
+.profile-panel,
+.profile-editor {
   background: white;
   border: 1px solid #e5e7eb;
   border-radius: 16px;
@@ -262,6 +335,15 @@ button {
   margin: 15px 0;
 }
 
+.success-message {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+  padding: 15px;
+  border-radius: 10px;
+  margin: 15px 0;
+}
+
 .empty-state {
   padding: 40px;
   text-align: center;
@@ -274,6 +356,90 @@ button {
   margin-top: 30px;
 }
 
+.request-panel {
+  margin: 10px 0 30px;
+}
+
+.request-panel .section-heading button {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: white;
+  color: #374151;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.request-list {
+  display: grid;
+  gap: 14px;
+}
+
+.request-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+}
+
+.request-card p {
+  color: #6b7280;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.request-card-header {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.status-badge {
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+  text-transform: capitalize;
+}
+
+.status-badge.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-badge.accepted {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.declined {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.request-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.request-actions button {
+  align-self: flex-start;
+  border: 1px solid #cc0000;
+  border-radius: 8px;
+  background: white;
+  color: #cc0000;
+  font-weight: 700;
+  padding: 10px 14px;
+}
+
+.request-actions button:first-child {
+  background: #cc0000;
+  color: white;
+}
+
 .profile-heading {
   display: flex;
   justify-content: space-between;
@@ -284,10 +450,98 @@ button {
   margin: 0;
 }
 
+.profile-heading p {
+  margin: 7px 0 0;
+  color: #6b7280;
+}
+
 .close-button {
   background: none;
   border: none;
   font-size: 20px;
+}
+
+.profile-editor {
+  margin: 20px 0 30px;
+}
+
+.profile-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
+
+.profile-form label {
+  color: #374151;
+  display: flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 8px;
+}
+
+.profile-form input,
+.profile-form textarea {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 12px;
+}
+
+.profile-form textarea {
+  resize: vertical;
+}
+
+.profile-form input:focus,
+.profile-form textarea:focus {
+  outline: 2px solid #cc0000;
+  outline-offset: 1px;
+}
+
+.wide-field {
+  grid-column: 1 / -1;
+}
+
+.checkbox-field {
+  align-items: center;
+  color: #1f2937;
+  flex-direction: row !important;
+  font-size: 14px;
+}
+
+.checkbox-field input {
+  width: auto;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.form-actions button {
+  border: 1px solid #cc0000;
+  border-radius: 8px;
+  padding: 11px 16px;
+  font-weight: 700;
+}
+
+.form-actions button[type="button"] {
+  background: white;
+  color: #cc0000;
+}
+
+.form-actions button[type="submit"] {
+  background: #cc0000;
+  color: white;
+}
+
+.form-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 
 .profile-content {
@@ -321,6 +575,29 @@ button {
   font-style: italic;
 }
 
+.profile-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 15px;
+  color: #6b7280;
+}
+
+.profile-tags strong {
+  color: #374151;
+}
+
+.profile-tags span {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 9px;
+}
+
 .footer {
   text-align: center;
   padding: 25px;
@@ -337,20 +614,58 @@ button {
   border-top: 1px solid #e5e7eb;
 }
 
-.message-form h4, .message-form p { margin: 0; }
-.message-form label { font-weight: 700; }
-.message-form input, .message-form textarea {
+.request-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.request-form h4,
+.request-form p,
+.message-form h4,
+.message-form p {
+  margin: 0;
+}
+
+.request-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.request-form label,
+.message-form label {
+  font-weight: 700;
+}
+
+.request-form input,
+.request-form textarea,
+.message-form input,
+.message-form textarea {
   width: 100%;
   padding: 12px;
   border: 1px solid #d1d5db;
   border-radius: 8px;
   font: inherit;
 }
-.message-form textarea { resize: vertical; }
-.message-form input:focus, .message-form textarea:focus {
+
+.request-form textarea,
+.message-form textarea {
+  resize: vertical;
+}
+
+.request-form input:focus,
+.request-form textarea:focus,
+.message-form input:focus,
+.message-form textarea:focus {
   outline: 2px solid #cc0000;
   outline-offset: 1px;
 }
+
+.request-form button,
 .message-form button {
   align-self: flex-start;
   background: #cc0000;
@@ -360,7 +675,13 @@ button {
   padding: 12px 20px;
   font-weight: 700;
 }
-.message-form button:disabled { opacity: 0.6; cursor: default; }
+
+.request-form button:disabled,
+.message-form button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .message-count { color: #6b7280; font-size: 13px; }
 .message-success { color: #166534; }
 
@@ -379,11 +700,33 @@ button {
     flex-direction: column;
   }
 
+  .filter-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-form {
+    grid-template-columns: 1fr;
+  }
+
+  .form-actions {
+    flex-direction: column-reverse;
+  }
+
   .search-form button {
     padding: 15px;
   }
 
   .profile-content {
+    flex-direction: column;
+  }
+
+  .request-card {
+    flex-direction: column;
+  }
+
+  .request-actions,
+  .request-grid {
+    grid-template-columns: 1fr;
     flex-direction: column;
   }
 }

@@ -24,6 +24,97 @@ def get_db():
         connection.close()
 
 
+def ensure_student_columns(db):
+    existing_columns = {
+        row["name"] for row in db.execute("PRAGMA table_info(students)")
+    }
+
+    for column in ("skills", "advice_topics"):
+        if column not in existing_columns:
+            db.execute(f"ALTER TABLE students ADD COLUMN {column} TEXT")
+
+
+def normalize_courses(courses):
+    if not isinstance(courses, list):
+        return []
+
+    normalized = []
+    seen = set()
+
+    for course in courses:
+        course_code = str(course).strip().upper()
+        if course_code and course_code not in seen:
+            normalized.append(course_code)
+            seen.add(course_code)
+
+    return normalized
+
+
+def profile_payload(data):
+    return {
+        "name": str(data.get("name", "")).strip(),
+        "program": str(data.get("program", "")).strip(),
+        "year": str(data.get("year", "")).strip(),
+        "bio": str(data.get("bio", "")).strip(),
+        "interests": str(data.get("interests", "")).strip(),
+        "skills": str(data.get("skills", "")).strip(),
+        "advice_topics": str(data.get("advice_topics", "")).strip(),
+        "willing_to_advise": 1
+        if data.get("willing_to_advise", True)
+        else 0,
+    }
+
+
+def replace_courses(db, table_name, student_id, courses):
+    db.execute(f"DELETE FROM {table_name} WHERE student_id = ?", (student_id,))
+
+    for course in courses:
+        db.execute(
+            f"""
+            INSERT INTO {table_name}
+            (student_id, course_code)
+            VALUES (?, ?)
+            """,
+            (student_id, course),
+        )
+
+
+def fetch_student(db, student_id):
+    student = db.execute("""
+        SELECT *
+        FROM students
+        WHERE id = ?
+    """, (student_id,)).fetchone()
+
+    if student is None:
+        return None
+
+    completed_courses = db.execute("""
+        SELECT course_code
+        FROM completed_courses
+        WHERE student_id = ?
+        ORDER BY course_code
+    """, (student_id,)).fetchall()
+
+    current_courses = db.execute("""
+        SELECT course_code
+        FROM current_courses
+        WHERE student_id = ?
+        ORDER BY course_code
+    """, (student_id,)).fetchall()
+
+    profile = dict(student)
+    profile["completed_courses"] = [
+        row["course_code"] for row in completed_courses
+    ]
+    profile["current_courses"] = [
+        row["course_code"] for row in current_courses
+    ]
+    profile["willing_to_advise"] = bool(profile["willing_to_advise"])
+
+    return profile
+
+
 def initialize_database():
     with get_db() as db:
         db.execute("""
@@ -38,6 +129,8 @@ def initialize_database():
             )
         """)
 
+        ensure_student_columns(db)
+
         db.execute("""
             CREATE TABLE IF NOT EXISTS accounts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +144,15 @@ def initialize_database():
 
         db.execute("""
             CREATE TABLE IF NOT EXISTS completed_courses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                student_id INTEGER NOT NULL,
+                course_code TEXT NOT NULL,
+                FOREIGN KEY (student_id) REFERENCES students(id)
+            )
+        """)
+
+        db.execute("""
+            CREATE TABLE IF NOT EXISTS current_courses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 student_id INTEGER NOT NULL,
                 course_code TEXT NOT NULL,
@@ -122,9 +224,19 @@ def initialize_database():
 
                 cursor = db.execute("""
                     INSERT INTO students
-                    (name, program, year, bio, interests, willing_to_advise)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (name, program, year, bio, interests, willing))
+                    (name, program, year, bio, interests, skills,
+                     advice_topics, willing_to_advise)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    name,
+                    program,
+                    year,
+                    bio,
+                    interests,
+                    "",
+                    "Workload, Projects, Course Prep",
+                    willing,
+                ))
 
                 student_id = cursor.lastrowid
 
@@ -196,26 +308,99 @@ def register():
                                 "willing_to_advise": willing, "completed_courses": courses}}), 201
 
 
+@app.route("/api/students", methods=["POST"])
+def create_student():
+    data = request.get_json(silent=True) or {}
+    payload = profile_payload(data)
+
+    if not payload["name"] or not payload["program"] or not payload["year"]:
+        return jsonify({
+            "error": "Name, program, and year are required."
+        }), 400
+
+    completed_courses = normalize_courses(data.get("completed_courses", []))
+    current_courses = normalize_courses(data.get("current_courses", []))
+
+    with get_db() as db:
+        cursor = db.execute("""
+            INSERT INTO students
+            (name, program, year, bio, interests, skills, advice_topics,
+             willing_to_advise)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            payload["name"],
+            payload["program"],
+            payload["year"],
+            payload["bio"],
+            payload["interests"],
+            payload["skills"],
+            payload["advice_topics"],
+            payload["willing_to_advise"],
+        ))
+
+        student_id = cursor.lastrowid
+        replace_courses(db, "completed_courses", student_id, completed_courses)
+        replace_courses(db, "current_courses", student_id, current_courses)
+        student = fetch_student(db, student_id)
+
+    return jsonify({"student": student}), 201
+
+
 @app.route("/api/students/search")
 def search_students():
     course = request.args.get("course", "").strip().upper()
+    program = request.args.get("program", "").strip()
+    year = request.args.get("year", "").strip()
+    skills = request.args.get("skills", "").strip()
+    advice_topics = request.args.get("advice_topics", "").strip()
+    available = request.args.get("available", "true").strip().lower()
 
-    if not course:
+    if not any((course, program, year, skills, advice_topics)):
         return jsonify({"students": []})
 
+    conditions = []
+    parameters = []
+
+    if course:
+        conditions.append("""
+            EXISTS (
+                SELECT 1
+                FROM completed_courses c
+                WHERE c.student_id = s.id
+                  AND UPPER(c.course_code) = ?
+            )
+        """)
+        parameters.append(course)
+
+    if available != "false":
+        conditions.append("s.willing_to_advise = 1")
+
+    for column, value in (
+        ("s.program", program),
+        ("s.year", year),
+        ("s.skills", skills),
+        ("s.advice_topics", advice_topics),
+    ):
+        if value:
+            conditions.append(f"LOWER(COALESCE({column}, '')) LIKE ?")
+            parameters.append(f"%{value.lower()}%")
+
+    where_clause = " AND ".join(conditions) if conditions else "1 = 1"
+
     with get_db() as db:
-        rows = db.execute("""
+        rows = db.execute(f"""
             SELECT DISTINCT
                 s.id,
                 s.name,
                 s.program,
-                s.year
+                s.year,
+                s.skills,
+                s.advice_topics,
+                s.willing_to_advise
             FROM students s
-            JOIN completed_courses c ON s.id = c.student_id
-            WHERE UPPER(c.course_code) = ?
-              AND s.willing_to_advise = 1
+            WHERE {where_clause}
             ORDER BY s.name
-        """, (course,)).fetchall()
+        """, parameters).fetchall()
 
     return jsonify({
         "students": [dict(row) for row in rows]
@@ -225,28 +410,65 @@ def search_students():
 @app.route("/api/students/<int:student_id>")
 def student_profile(student_id):
     with get_db() as db:
-        student = db.execute("""
-            SELECT *
-            FROM students
-            WHERE id = ?
-        """, (student_id,)).fetchone()
+        student = fetch_student(db, student_id)
 
         if student is None:
             return jsonify({"error": "Student not found"}), 404
 
-        courses = db.execute("""
-            SELECT course_code
-            FROM completed_courses
-            WHERE student_id = ?
-            ORDER BY course_code
-        """, (student_id,)).fetchall()
+    return jsonify({"student": student})
 
-    profile = dict(student)
-    profile["completed_courses"] = [
-        row["course_code"] for row in courses
-    ]
 
-    return jsonify({"student": profile})
+@app.route("/api/students/<int:student_id>", methods=["PUT"])
+def update_student(student_id):
+    data = request.get_json(silent=True) or {}
+    payload = profile_payload(data)
+
+    if not payload["name"] or not payload["program"] or not payload["year"]:
+        return jsonify({
+            "error": "Name, program, and year are required."
+        }), 400
+
+    completed_courses = normalize_courses(data.get("completed_courses", []))
+    current_courses = normalize_courses(data.get("current_courses", []))
+
+    with get_db() as db:
+        existing_student = db.execute("""
+            SELECT id
+            FROM students
+            WHERE id = ?
+        """, (student_id,)).fetchone()
+
+        if existing_student is None:
+            return jsonify({"error": "Student not found"}), 404
+
+        db.execute("""
+            UPDATE students
+            SET name = ?,
+                program = ?,
+                year = ?,
+                bio = ?,
+                interests = ?,
+                skills = ?,
+                advice_topics = ?,
+                willing_to_advise = ?
+            WHERE id = ?
+        """, (
+            payload["name"],
+            payload["program"],
+            payload["year"],
+            payload["bio"],
+            payload["interests"],
+            payload["skills"],
+            payload["advice_topics"],
+            payload["willing_to_advise"],
+            student_id,
+        ))
+
+        replace_courses(db, "completed_courses", student_id, completed_courses)
+        replace_courses(db, "current_courses", student_id, current_courses)
+        student = fetch_student(db, student_id)
+
+    return jsonify({"student": student})
 
 
 @app.route("/api/students/<int:student_id>/messages", methods=["POST"])
