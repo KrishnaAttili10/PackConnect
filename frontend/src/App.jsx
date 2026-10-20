@@ -493,7 +493,9 @@ function App() {
       program: student.program || "",
       year: student.year || "",
       bio: student.bio || "",
-      interests: student.interests || "",
+      interests: Array.isArray(student.interests)
+        ? student.interests.join(", ")
+        : student.interests || "",
       skills: student.skills || "",
       advice_topics: student.advice_topics || "",
       completed_courses: coursesToText(student.completed_courses),
@@ -506,6 +508,7 @@ function App() {
   }
 
   function closeProfileForm() {
+    if (profileSaving) return;
     setShowProfileForm(false);
     setEditingStudentId(null);
     setProfileForm(emptyProfile);
@@ -513,12 +516,21 @@ function App() {
 
   async function saveProfile(event) {
     event.preventDefault();
+    if (profileSaving) return;
+    if (!profileForm.name.trim()) {
+      setError("Name is required.");
+      return;
+    }
     setProfileSaving(true);
     setError("");
     setNotice("");
 
     const payload = {
-      ...profileForm,
+      ...Object.fromEntries(
+        Object.entries(profileForm).map(([key, value]) => [
+          key, typeof value === "string" ? value.trim() : value,
+        ])
+      ),
       completed_courses: textToCourses(profileForm.completed_courses),
       current_courses: textToCourses(profileForm.current_courses),
     };
@@ -739,7 +751,7 @@ function App() {
               </div>
               <button
                 className="close-button"
-                onClick={closeProfileForm}
+                onClick={closeProfileForm} disabled={profileSaving}
                 type="button"
                 aria-label="Close profile editor"
               >
@@ -748,6 +760,7 @@ function App() {
             </div>
 
             <form className="profile-form" onSubmit={saveProfile}>
+              <fieldset className="profile-form-fields" disabled={profileSaving}>
               <label>
                 Name
                 <input
@@ -872,13 +885,14 @@ function App() {
               </label>
 
               <div className="form-actions wide-field">
-                <button type="button" onClick={closeProfileForm}>
+                <button type="button" onClick={closeProfileForm} disabled={profileSaving}>
                   Cancel
                 </button>
                 <button type="submit" disabled={profileSaving}>
                   {profileSaving ? "Saving..." : "Save Profile"}
                 </button>
               </div>
+              </fieldset>
             </form>
           </section>
         )}

@@ -82,7 +82,7 @@ python -m venv .venv
 Install backend dependencies:
 
 ```powershell
-python -m pip install flask flask-cors
+python -m pip install -r backend/requirements.txt
 ```
 
 Start Flask:
@@ -99,7 +99,7 @@ Running on http://127.0.0.1:5000
 
 On first startup, it creates `backend/peer_advice.db` and inserts fictional sample student records. Leave this terminal running.
 
-> **PowerShell note:** If script execution is blocked when activating the virtual environment, you can skip activation and run `.\.venv\Scripts\python.exe -m pip install flask flask-cors` followed by `.\.venv\Scripts\python.exe backend/app.py`.
+> **PowerShell note:** If script execution is blocked when activating the virtual environment, you can skip activation and run `.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt` followed by `.\.venv\Scripts\python.exe backend/app.py`.
 
 ### 3. Start the React frontend
 
@@ -217,3 +217,15 @@ Open a pull request on GitHub for team review before merging into `main`.
 ---
 
 **Repository:** https://github.com/kkattili_ncstate/PackConnect
+
+### Supabase connection setup
+
+Install backend dependencies with `python -m pip install -r backend/requirements.txt`.
+To initialize the optional Supabase client, create `backend/.env` with
+`SUPABASE_URL` and `SUPABASE_SECRET_KEY` from your Supabase project. Keep this file
+local; it is ignored by Git. Both values must be set together. With neither set,
+the application runs locally without a Supabase client.
+
+The client is available as `supabase` in `backend/app.py`. API routes currently
+store data in SQLite; this connection setup does not migrate data or switch
+those routes to Supabase.
