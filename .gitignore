@@ -5,6 +5,9 @@ __pycache__/
 venv/
 .env
 
+# Local database backups
+.local-backups/
+
 # SQLite
 *.db
 *.sqlite

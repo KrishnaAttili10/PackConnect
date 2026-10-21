@@ -4,11 +4,15 @@ PackConnect is a student-to-student peer-advice discovery portal being developed
 
 > **Project status:** Early working prototype. The application includes fictional sample students and account registration. Messages can be saved locally; login, student inboxes, and verified course histories are not implemented yet.
 
+See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, limitations, and outstanding work.
+
 ## Current features
 
 - Register an account with email, password, and a student profile. Passwords are hashed; emails remain private. Advising is optional.
-- Search for students by an exact course code (for example, `CSC 510`).
-- Display matching students who opted in to offer advice.
+- Create and edit profiles with completed/current courses, skills, and advice topics. Profile editing currently has no authentication or ownership checks.
+- Search by course code (for example, `CSC 510`) and filter by program, year, skills, advice topics, and advising availability.
+- Display matching students who opted in to offer advice by default; the availability filter can include other profiles.
+- Create and accept/decline advice requests within the current browser session. Requests are not delivered or saved and disappear on reload.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
 - Automatically seed a local SQLite database with sample students on first backend startup.
 - Send an advice message from a student's profile using your name and a message of up to 2,000 characters. Messages are saved in SQLite; there is no inbox or notification delivery yet.
@@ -28,7 +32,7 @@ PackConnect is a student-to-student peer-advice discovery portal being developed
 PackConnect/
 ├── backend/
 │   ├── app.py             # Flask API and database initialization
-│   └── peer_advice.db     # Created locally; not committed
+│   └── peer_advice.db     # Created locally from fictional seeds; not tracked
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx        # Search and student profile UI
@@ -156,7 +160,7 @@ The registration API accepts `name`, `email`, `password`, `program`, and `year`,
 - The frontend currently calls `http://127.0.0.1:5000` directly. Run Flask on port **5000** unless you also update `API_URL` in `frontend/src/App.jsx`.
 - Vite usually runs on port **5173**. If that port is busy, use the URL printed by `npm run dev`.
 - Flask runs in **debug mode** for local development. Do not deploy the development server to production.
-- SQLite data is local and is **not pushed to GitHub**. Each developer gets their own seeded database.
+- SQLite is the active storage backend. Runtime databases are ignored and are no longer tracked in this version. Existing clones must follow the backup instructions below before pulling the removal. Historical commits still contain the old database.
 - The example students are fictional; no real student information is required for the prototype.
 - Messaging currently saves messages locally with a self-reported sender name. Login, inboxes, and notifications are planned features.
 - Run backend messaging checks with `python -m unittest discover -s backend -p "test_*.py"` and frontend checks with `npm run build` and `npm run lint` from `frontend`.
@@ -209,9 +213,9 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 ## Planned improvements
 
-- Student login and profile editing.
+- Student login and ownership checks for the existing profile editor.
 - Course completion reporting and richer course discovery.
-- Connection requests and student-to-student messaging.
+- Persistent advice requests, recipient inboxes, and authenticated messaging.
 - Improved testing, validation, privacy, and deployment configuration.
 
 ---
@@ -229,3 +233,29 @@ the application runs locally without a Supabase client.
 The client is available as `supabase` in `backend/app.py`. API routes currently
 store data in SQLite; this connection setup does not migrate data or switch
 those routes to Supabase.
+
+### Existing clones: back up before pulling the database removal
+
+Stop the Flask backend before making a file backup. From the repository root:
+
+```powershell
+$databaseBackupDir = Join-Path $env:TEMP ("PackConnect-db-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $databaseBackupDir | Out-Null
+Copy-Item -LiteralPath backend/peer_advice.db -Destination (Join-Path $databaseBackupDir "peer_advice.db")
+Write-Output "Database backup: $databaseBackupDir"
+```
+
+Keep the printed backup path. Pulling or switching to a commit that removes the
+tracked database can delete that file from an existing checkout. After updating,
+restore the backup to `backend/peer_advice.db` if you want your previous local data.
+Do not add the restored file to Git.
+
+For a fresh clone, no database download is needed. Running
+`.\.venv\Scripts\python.exe backend/app.py` creates the SQLite database and four
+fictional student profiles. It creates no accounts or messages. Run
+`git ls-files '*.db'` to confirm no database is tracked, and
+`git check-ignore backend/peer_advice.db` to confirm the ignore rule applies.
+
+This change stops future database tracking; it does not remove historical
+copies. The team must record its decision about historical data in the cleanup
+issue before closing it. Shared Git history has not been rewritten.
