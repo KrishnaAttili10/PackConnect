@@ -19,6 +19,7 @@ class SearchTests(PostgresTestCase):
             ("Faye", "Computer Science", "Second Year", "Python", "Workload", True, "CSC 510"),
         ]
         with portal.get_db() as db:
+            db.execute("DELETE FROM accounts")
             db.execute("DELETE FROM completed_courses")
             db.execute("DELETE FROM students")
             for name, program, year, skills, topics, willing, course in profiles:
@@ -27,6 +28,10 @@ class SearchTests(PostgresTestCase):
                     VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
                 """, (name, program, year, skills, topics, willing)).fetchone()["id"]
                 self.ids[name] = student_id
+                db.execute("""
+                    INSERT INTO accounts (student_id, email, password_hash)
+                    VALUES (%s, %s, %s)
+                """, (student_id, f"{name.lower()}@example.test", "unused-test-hash"))
                 db.execute("INSERT INTO completed_courses (student_id, course_code) VALUES (%s, %s)",
                            (student_id, course))
             db.execute("INSERT INTO current_courses (student_id, course_code) VALUES (%s, 'CSC 510')",
@@ -47,6 +52,18 @@ class SearchTests(PostgresTestCase):
         for course in ("CSC 510", "csc 510", "  CsC 510  "):
             with self.subTest(course=course):
                 self.assert_matches(["Ada", "Blake", "Casey", "Faye"], course=course)
+
+    def test_profiles_without_accounts_are_excluded_from_search(self):
+        with portal.get_db() as db:
+            db.execute("DELETE FROM accounts WHERE student_id = %s", (self.ids["Ada"],))
+        for available in ("true", "false"):
+            with self.subTest(available=available):
+                rows = self.search(course="CSC 510", available=available)
+                self.assertNotIn(self.ids["Ada"], [row["id"] for row in rows])
+                self.assertIn(self.ids["Blake"], [row["id"] for row in rows])
+        profile = self.client.get(f"/api/students/{self.ids['Ada']}").get_json()["student"]
+        self.assertFalse(profile["can_receive_requests"])
+        self.assertEqual(profile["completed_courses"], ["CSC 510"])
 
     def test_current_course_does_not_count_as_completed(self):
         self.assert_matches(["Ada", "Blake", "Casey", "Faye"], course="CSC 510", program="", available="true")

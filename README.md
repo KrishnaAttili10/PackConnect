@@ -33,7 +33,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Register an account with email, password, and a student profile. Passwords are hashed; emails remain private. Advising is optional.
 - Create and edit profiles with completed/current courses, skills, and advice topics. Only the signed-in owner can edit their profile; the API rejects unauthenticated or non-owner updates.
 - Search by course code (for example, `CSC 510`) and filter by program, year, skills, advice topics, and advising availability.
-- Display matching students who opted in to offer advice by default; the availability filter can include other profiles.
+- Search lists registered students only, excluding profiles without login accounts. By default, results include students who opted in to advise; turning off the availability filter also includes registered students who are not currently advising.
 - Send persistent advice requests, view incoming/outgoing requests, and accept or decline as the recipient.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
 - Store accounts, profiles, courses, requests, chat, and notifications in Supabase PostgreSQL.

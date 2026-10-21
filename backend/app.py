@@ -277,7 +277,8 @@ def search_students():
     if not any((course, program, year, skills, advice_topics)):
         return jsonify({"students": []})
 
-    conditions = []
+    # Only registered students can receive and respond to advice requests.
+    conditions = ["EXISTS (SELECT 1 FROM accounts a WHERE a.student_id = s.id)"]
     parameters = []
 
     if course:

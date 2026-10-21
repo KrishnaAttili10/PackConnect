@@ -209,3 +209,63 @@ describe('profile editor', () => {
     expect(onUserUpdated).not.toHaveBeenCalled()
   })
 })
+
+describe('peer profile request controls', () => {
+  it('lets a student send a request to a registered advisor', async () => {
+    const user = userEvent.setup()
+    const peer = { ...student, id: 2, name: 'Registered Advisor' }
+    const normalFetch = fetch.getMockImplementation()
+    fetch.mockImplementation((url, options) => {
+      if (url === '/api/students/2')
+        return Promise.resolve(response({ student: peer }))
+      if (url === '/api/requests' && options?.method === 'POST')
+        return Promise.resolve(response({ request: { id: 7 } }, 201))
+      return normalFetch(url, options)
+    })
+    render(<Workspace initialRoute="app/students/2" />)
+    await user.type(
+      await screen.findByRole('textbox', { name: 'Advice topic' }),
+      'Projects',
+    )
+    await user.type(
+      screen.getByRole('textbox', { name: 'Your request' }),
+      'How should I prepare?',
+    )
+    await user.click(screen.getByRole('button', { name: 'Send request' }))
+    expect(
+      await screen.findByText(/Request sent to Registered Advisor/),
+    ).toBeInTheDocument()
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/requests',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          course_code: 'CSC 510',
+          advice_topic: 'Projects',
+          message: 'How should I prepare?',
+          recipient_id: 2,
+        }),
+      }),
+    )
+  })
+
+  it('explains why an old direct link to an unregistered profile cannot receive requests', async () => {
+    const normalFetch = fetch.getMockImplementation()
+    fetch.mockImplementation((url, options) =>
+      url === '/api/students/2'
+        ? Promise.resolve(
+            response({
+              student: { ...student, id: 2, can_receive_requests: false },
+            }),
+          )
+        : normalFetch(url, options),
+    )
+    render(<Workspace initialRoute="app/students/2" />)
+    expect(
+      await screen.findByText(/This sample profile has no registered account/),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Send request' }),
+    ).not.toBeInTheDocument()
+  })
+})
