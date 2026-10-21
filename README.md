@@ -2,10 +2,11 @@
 
 
 
+
 [![Build](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/build.yml/badge.svg?branch=development)](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/build.yml?query=branch%3Adevelopment)
 
+[![Tests and Quality](https://img.shields.io/github/actions/workflow/status/KrishnaAttili10/PackConnect/ci.yml?branch=development&label=Tests%20%26%20Quality)](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/ci.yml?query=branch%3Adevelopment)
 
-[![Tests and Quality](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/ci.yml/badge.svg?branch=development)](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/ci.yml?query=branch%3Adevelopment)
 
 
 
