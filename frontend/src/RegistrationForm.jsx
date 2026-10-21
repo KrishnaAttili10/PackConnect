@@ -5,6 +5,8 @@ export default function RegistrationForm({ apiUrl, onRegistered, onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmation, setShowConfirmation] = useState(false);
 
   function update(event) {
     const { name, value, checked, type } = event.target;
@@ -59,10 +61,16 @@ export default function RegistrationForm({ apiUrl, onRegistered, onClose }) {
             <label htmlFor="register-email">Email address</label>
             <input id="register-email" name="email" type="email" value={values.email} onChange={update} autoComplete="email" maxLength={254} required />
             <label htmlFor="register-password">Password</label>
-            <input id="register-password" name="password" type="password" value={values.password} onChange={update} autoComplete="new-password" minLength={12} maxLength={128} aria-describedby="password-help" required />
+            <div className="auth-password">
+              <input id="register-password" name="password" type={showPassword ? "text" : "password"} value={values.password} onChange={update} autoComplete="new-password" minLength={12} maxLength={128} aria-describedby="password-help" required />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} aria-controls="register-password" aria-pressed={showPassword} aria-label={showPassword ? "Hide password" : "Show password"}>{showPassword ? "Hide" : "Show"}</button>
+            </div>
             <span id="password-help" className="message-count">Use 12–128 characters.</span>
             <label htmlFor="register-confirm">Confirm password</label>
-            <input id="register-confirm" name="confirmPassword" type="password" value={values.confirmPassword} onChange={update} autoComplete="new-password" minLength={12} maxLength={128} required />
+            <div className="auth-password">
+              <input id="register-confirm" name="confirmPassword" type={showConfirmation ? "text" : "password"} value={values.confirmPassword} onChange={update} autoComplete="new-password" minLength={12} maxLength={128} required />
+              <button type="button" onClick={() => setShowConfirmation(!showConfirmation)} aria-controls="register-confirm" aria-pressed={showConfirmation} aria-label={showConfirmation ? "Hide confirmation password" : "Show confirmation password"}>{showConfirmation ? "Hide" : "Show"}</button>
+            </div>
             <label htmlFor="register-program">Program</label>
             <input id="register-program" name="program" value={values.program} onChange={update} maxLength={100} placeholder="e.g. MS Computer Science" required />
             <label htmlFor="register-year">Year of study</label>
