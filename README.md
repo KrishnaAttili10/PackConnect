@@ -10,6 +10,9 @@
 [![Coverage](https://codecov.io/gh/KrishnaAttili10/PackConnect/branch/development/graph/badge.svg)](https://app.codecov.io/gh/KrishnaAttili10/PackConnect/tree/development)
 
 
+[![Code Style](https://img.shields.io/github/actions/workflow/status/KrishnaAttili10/PackConnect/style.yml?branch=development&label=Code%20Style)](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/style.yml?query=branch%3Adevelopment)
+
+
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
