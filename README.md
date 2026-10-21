@@ -14,6 +14,12 @@
 
 
 
+[![Formatter](https://img.shields.io/github/actions/workflow/status/KrishnaAttili10/PackConnect/formatter.yml?branch=development&label=Formatter)](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/formatter.yml?query=branch%3Adevelopment)
+
+
+[![Syntax](https://img.shields.io/github/actions/workflow/status/KrishnaAttili10/PackConnect/syntax.yml?branch=development&label=Syntax)](https://github.com/KrishnaAttili10/PackConnect/actions/workflows/syntax.yml?query=branch%3Adevelopment)
+
+
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
 > **Project status:** Early working prototype. The application includes account registration and persistent student profiles. Login uses password verification and session cookies. All application data persists in Supabase PostgreSQL; acceptance unlocks private two-person chat. Course histories remain self-reported.
