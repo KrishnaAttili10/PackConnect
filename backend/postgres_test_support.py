@@ -34,6 +34,8 @@ class PostgresTestCase(unittest.TestCase):
                     db.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
             db.execute("CREATE SCHEMA IF NOT EXISTS auth")
             db.execute("CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY)")
+            db.execute("ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email text")
+            db.execute("ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS email_confirmed_at timestamptz")
         with portal.get_db() as db:
             for path in sorted(MIGRATIONS.glob("*.sql")):
                 db.execute(migration_sql(path).replace("public.", self.schema + "."), prepare=False)

@@ -9,20 +9,27 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
 from messaging import create_messaging_blueprint, initialize_messaging
 from database import connect_database
+from identity import registered_student_sql, session_student_id
 
 import os
 import secrets
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
+from supabase.lib.client_options import ClientOptions
+from supabase_auth.errors import AuthApiError, AuthRetryableError
+from httpx import HTTPError
 
 load_dotenv(Path(__file__).parent / ".env")
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SECRET_KEY = os.getenv("SUPABASE_SECRET_KEY")
 
-if bool(SUPABASE_URL) != bool(SUPABASE_SECRET_KEY):
-    raise RuntimeError("Set both SUPABASE_URL and SUPABASE_SECRET_KEY in backend/.env")
+if (SUPABASE_SECRET_KEY and not SUPABASE_URL) or (
+    SUPABASE_URL and not (SUPABASE_SECRET_KEY or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+                         or os.getenv("SUPABASE_ANON_KEY"))
+):
+    raise RuntimeError("Set SUPABASE_URL and a Supabase key in backend/.env")
 
 supabase = (
     create_client(SUPABASE_URL, SUPABASE_SECRET_KEY)
@@ -128,7 +135,10 @@ def fetch_student(db, student_id):
     """, (student_id,)).fetchall()
 
     profile = dict(student)
-    profile["can_receive_requests"] = bool(db.execute("SELECT 1 FROM accounts WHERE student_id = %s", (student_id,)).fetchone())
+    profile["can_receive_requests"] = bool(db.execute(
+        f"SELECT s.id FROM students s WHERE s.id = %s AND {registered_student_sql()}",
+        (student_id,),
+    ).fetchone())
     profile["completed_courses"] = [
         row["course_code"] for row in completed_courses
     ]
@@ -172,29 +182,67 @@ def login():
             or not email.strip() or not password or len(email) > 254
             or len(password) > 128):
         return jsonify({"error": "Enter your email and password."}), 400
+    email = email.strip().lower()
     with get_db() as db:
         account = db.execute(
             "SELECT student_id, password_hash FROM accounts WHERE lower(email) = %s",
-            (email.strip().lower(),),
+            (email,),
         ).fetchone()
-        valid = check_password_hash(
-            account["password_hash"] if account else DUMMY_PASSWORD_HASH, password
-        )
-        if not account or not valid:
+    auth_user_id = None
+    if account:
+        if not check_password_hash(account["password_hash"], password):
             return jsonify({"error": "Email or password is incorrect."}), 401
-        student = fetch_student(db, account["student_id"])
+        student_id = account["student_id"]
+    else:
+        # Keep user tokens out of the shared admin client and Flask session.
+        key = (os.getenv("SUPABASE_PUBLISHABLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
+               or SUPABASE_SECRET_KEY)
+        if not SUPABASE_URL or not key:
+            check_password_hash(DUMMY_PASSWORD_HASH, password)
+            return jsonify({"error": "Email or password is incorrect."}), 401
+        auth_client = None
+        try:
+            auth_client = create_client(SUPABASE_URL, key, options=ClientOptions(
+                auto_refresh_token=False, persist_session=False,
+            ))
+            result = auth_client.auth.sign_in_with_password({"email": email, "password": password})
+        except AuthApiError:
+            return jsonify({"error": "Email or password is incorrect."}), 401
+        except (HTTPError, AuthRetryableError):
+            return jsonify({"error": "Sign-in service is unavailable. Please try again."}), 503
+        finally:
+            if auth_client is not None:
+                auth_client.auth.close()
+        auth_user = result.user
+        if (not auth_user or not auth_user.email_confirmed_at
+                or not auth_user.email or auth_user.email.lower() != email):
+            return jsonify({"error": "Email or password is incorrect."}), 401
+        auth_user_id = str(auth_user.id)
+        # Use the verified immutable ID; names and email alone never link profiles.
+        with get_db() as db:
+            linked = db.execute("""
+                SELECT s.id FROM students s JOIN auth.users u ON u.id = s.auth_user_id
+                WHERE u.id = %s AND u.email_confirmed_at IS NOT NULL
+            """, (auth_user_id,)).fetchone()
+        if not linked:
+            return jsonify({"error": "This account has no linked student profile. Contact the project team."}), 403
+        student_id = linked["id"]
+    with get_db() as db:
+        student = fetch_student(db, student_id)
     if student is None:
         return jsonify({"error": "This account has no student profile."}), 401
     session.clear()
     session.permanent = True
     session["student_id"] = student["id"]
+    if auth_user_id:
+        session["auth_user_id"] = auth_user_id
     return jsonify({"student": student})
 
 
 @app.route("/api/auth/me")
 def current_user():
     with get_db() as db:
-        student = fetch_student(db, session.get("student_id"))
+        student = fetch_student(db, session_student_id(db, session))
     if student is None:
         session.clear()
         return jsonify({"error": "Sign in to continue."}), 401
@@ -240,6 +288,8 @@ def register():
     password_hash = generate_password_hash(password)
     try:
         with get_db() as db:
+            if db.execute("SELECT 1 FROM auth.users WHERE lower(email) = %s", (email,)).fetchone():
+                return jsonify({"error": "An account with this email already exists."}), 409
             cursor = db.execute("""
                 INSERT INTO students (name, program, year, bio, interests, willing_to_advise)
                 VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
@@ -277,8 +327,8 @@ def search_students():
     if not any((course, program, year, skills, advice_topics)):
         return jsonify({"students": []})
 
-    # Only registered students can receive and respond to advice requests.
-    conditions = ["EXISTS (SELECT 1 FROM accounts a WHERE a.student_id = s.id)"]
+    # Include both local accounts and confirmed Supabase registrations.
+    conditions = [registered_student_sql()]
     parameters = []
 
     if course:
@@ -340,7 +390,8 @@ def student_profile(student_id):
 
 @app.route("/api/students/<int:student_id>", methods=["PUT"])
 def update_student(student_id):
-    owner_id = session.get("student_id")
+    with get_db() as db:
+        owner_id = session_student_id(db, session)
     if owner_id is None:
         return jsonify({"error": "Sign in to edit your profile."}), 401
     if owner_id != student_id:

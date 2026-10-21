@@ -4,6 +4,7 @@ from psycopg.errors import UniqueViolation
 from functools import wraps
 
 from flask import Blueprint, jsonify, request, session
+from identity import registered_student_sql, session_student_id
 
 
 def initialize_messaging(db):
@@ -28,11 +29,8 @@ def create_messaging_blueprint(get_db):
         @wraps(function)
         def wrapped(*args, **kwargs):
             with get_db() as db:
-                account = db.execute(
-                    "SELECT student_id FROM accounts WHERE student_id = %s",
-                    (session.get("student_id"),),
-                ).fetchone()
-            if account is None:
+                student_id = session_student_id(db, session)
+            if student_id is None:
                 return jsonify({"error": "Sign in to continue."}), 401
             return function(*args, **kwargs)
         return wrapped
@@ -81,13 +79,13 @@ def create_messaging_blueprint(get_db):
         fields["course_code"] = fields["course_code"].upper()
         try:
             with get_db() as db:
-                recipient = db.execute("""
-                    SELECT s.willing_to_advise, a.id AS account_id FROM students s
-                    LEFT JOIN accounts a ON a.student_id = s.id WHERE s.id = %s
+                recipient = db.execute(f"""
+                    SELECT s.willing_to_advise, {registered_student_sql()} AS can_receive_requests
+                    FROM students s WHERE s.id = %s
                 """, (recipient_id,)).fetchone()
                 if recipient is None:
                     return jsonify({"error": "Student not found."}), 404
-                if not recipient["willing_to_advise"] or recipient["account_id"] is None:
+                if not recipient["willing_to_advise"] or not recipient["can_receive_requests"]:
                     return jsonify({"error": "This student cannot receive advice requests right now."}), 400
                 cursor = db.execute("""
                     INSERT INTO advice_requests

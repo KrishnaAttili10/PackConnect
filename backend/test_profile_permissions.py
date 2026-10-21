@@ -168,14 +168,14 @@ class ProfilePermissionsTests(PostgresTestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.get_json(), {"error": "Student not found"})
 
-    def test_update_deleted_profile_returns_404_without_recreating_records(self):
+    def test_update_deleted_profile_invalidates_session_without_recreating_records(self):
         self.client.post("/api/auth/login", json=self.credentials)
         with portal.get_db() as db:
             db.execute("DELETE FROM completed_courses WHERE student_id = %s", (self.student_id,))
             db.execute("DELETE FROM accounts WHERE student_id = %s", (self.student_id,))
             db.execute("DELETE FROM students WHERE id = %s", (self.student_id,))
         response = self.client.put(f"/api/students/{self.student_id}", json=self.payload)
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 401)
         with portal.get_db() as db:
             for table in ("completed_courses", "current_courses"):
                 self.assertEqual(db.execute(f"SELECT COUNT(*) FROM {table} WHERE student_id = %s",

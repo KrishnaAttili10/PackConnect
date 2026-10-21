@@ -3,7 +3,11 @@
 All Flask routes use PostgreSQL hosted by Supabase through Psycopg. Registration,
 login accounts, profiles, courses, requests, chat, and notifications share this
 database. There is no SQLite runtime or fallback. Flask session authentication
-is retained; accounts are not automatically converted to Supabase Auth users.
+is retained. Login supports both Flask accounts and confirmed Supabase Auth
+registrations already linked through `students.auth_user_id`; it does not create
+duplicate profiles or convert existing Flask accounts. Configure `SUPABASE_URL`
+and `SUPABASE_PUBLISHABLE_KEY` (or legacy `SUPABASE_ANON_KEY`) for Supabase login.
+The existing server-only secret key is supported as a fallback.
 
 ## Configure and apply migrations
 

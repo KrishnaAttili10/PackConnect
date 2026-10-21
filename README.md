@@ -33,7 +33,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Register an account with email, password, and a student profile. Passwords are hashed; emails remain private. Advising is optional.
 - Create and edit profiles with completed/current courses, skills, and advice topics. Only the signed-in owner can edit their profile; the API rejects unauthenticated or non-owner updates.
 - Search by course code (for example, `CSC 510`) and filter by program, year, skills, advice topics, and advising availability.
-- Search lists registered students only, excluding profiles without login accounts. By default, results include students who opted in to advise; turning off the availability filter also includes registered students who are not currently advising.
+- Search lists registered students only, including confirmed Supabase Auth users linked through `students.auth_user_id` and accounts registered in this app. Unlinked profiles are excluded. By default, results include students who opted in to advise; turning off the availability filter also includes registered students who are not currently advising.
 - Send persistent advice requests, view incoming/outgoing requests, and accept or decline as the recipient.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
 - Store accounts, profiles, courses, requests, chat, and notifications in Supabase PostgreSQL.
@@ -338,3 +338,19 @@ Existing pending requests and completed decisions are backfilled once without
 resetting previously read updates. The panel shows the latest 50 events; the
 badge counts all unread events. Chat message content is not included in the
 notification preview. All notification APIs are scoped to the signed-in account.
+
+### Existing Supabase Auth registrations
+
+Students registered through Supabase Auth can use the same app login with their
+existing email and password. The backend verifies those credentials with Supabase
+and loads the existing profile by `students.auth_user_id`. It does not match by
+name, copy passwords, or create a second profile. The email must be confirmed and
+the profile must already have the matching Supabase user ID; missing links require
+project-team review rather than automatic linking by email.
+
+Set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` (or `SUPABASE_ANON_KEY`) in
+`backend/.env`. The server-only `SUPABASE_SECRET_KEY` is also supported as a
+fallback. Supabase users are visible in search and can receive requests before
+their first app login. After signing in, they can accept/decline, chat, edit their
+own profile, and read notifications using the same Flask session flow. Existing
+Flask accounts continue to work. No new database migration is needed.
