@@ -5,6 +5,8 @@ from unittest.mock import Mock, patch
 from uuid import uuid4
 
 import httpx
+from supabase import create_client as real_create_client
+from supabase_auth import SyncGoTrueClient
 from supabase_auth.errors import AuthApiError
 
 import app as portal
@@ -66,6 +68,19 @@ class SupabaseAuthenticationTests(PostgresTestCase):
         self.assertEqual(portal.app.test_client().get("/api/requests").status_code, 401)
         self.client.post("/api/auth/logout")
         self.assertEqual(self.client.get("/api/requests").status_code, 401)
+
+    def test_login_constructs_real_sync_sdk_client_without_network(self):
+        # Exercise SDK options compatibility; only the remote password call is mocked.
+        self.factory.side_effect = real_create_client
+        with patch.object(SyncGoTrueClient, "sign_in_with_password",
+                          return_value=SimpleNamespace(user=self.user)) as sign_in:
+            response = self.login()
+        sign_in.assert_called_once_with(self.credentials)
+        self.assertEqual(response.get_json()["student"]["id"], self.student_id)
+        options = self.factory.call_args.kwargs["options"]
+        self.assertTrue(hasattr(options, "storage"))
+        self.assertFalse(options.persist_session)
+        self.assertFalse(options.auto_refresh_token)
 
     def test_confirmed_linked_profile_is_discoverable_and_can_receive_request_before_login(self):
         peers = self.client.get("/api/students/search?course=CSC%20510").get_json()["students"]

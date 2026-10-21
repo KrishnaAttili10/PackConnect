@@ -16,7 +16,7 @@ import secrets
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
-from supabase.lib.client_options import ClientOptions
+from supabase.lib.client_options import SyncClientOptions
 from supabase_auth.errors import AuthApiError, AuthRetryableError
 from httpx import HTTPError
 
@@ -202,7 +202,7 @@ def login():
             return jsonify({"error": "Email or password is incorrect."}), 401
         auth_client = None
         try:
-            auth_client = create_client(SUPABASE_URL, key, options=ClientOptions(
+            auth_client = create_client(SUPABASE_URL, key, options=SyncClientOptions(
                 auto_refresh_token=False, persist_session=False,
             ))
             result = auth_client.auth.sign_in_with_password({"email": email, "password": password})
