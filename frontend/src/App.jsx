@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import { ConnectionRequestForm, RequestInbox, Conversation } from "./Messaging";
 import { useRequests } from "./useRequests";
+import NotificationBell from "./NotificationBell";
 
 const API_URL = "";
 
@@ -326,6 +327,7 @@ function App({ user, onLogout, route, onUserUpdated }) {
           <div className="header-actions">
             <span className="university">NC State University</span>
             <span className="signed-in-name">{user.name}</span>
+            <NotificationBell route={route} />
             <button className="profile-button" onClick={onLogout}>Sign out</button>
           </div>
         </div>
@@ -335,7 +337,7 @@ function App({ user, onLogout, route, onUserUpdated }) {
         <button className="menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="workspace-links" onClick={() => setMenuOpen(!menuOpen)}>Menu</button>
         <div id="workspace-links" className={menuOpen ? "workspace-links open" : "workspace-links"} onClick={() => setMenuOpen(false)}>
           <a href="#/app" aria-current={isSearchPage ? "page" : undefined}>Find peers</a>
-          <a href="#/app/requests" aria-current={route === "app/requests" ? "page" : undefined}>Requests {requests.length > 0 && <span>{requests.length}</span>}</a>
+          <a href="#/app/requests" aria-current={route.startsWith("app/requests") ? "page" : undefined}>Requests {requests.length > 0 && <span>{requests.length}</span>}</a>
           <a href="#/app/profile" aria-current={route.startsWith("app/profile") ? "page" : undefined}>My profile</a>
           <a href="#/about">About</a>
         </div>
@@ -440,7 +442,7 @@ function App({ user, onLogout, route, onUserUpdated }) {
 
         </section>}
 
-        {route === "app/requests" && <RequestInbox user={user} requests={requests} loading={requestsLoading} error={requestsError} onRefresh={refreshRequests} />}
+        {["app/requests", "app/requests/outgoing"].includes(route) && <RequestInbox key={route} initialTab={route.endsWith("outgoing") ? "outgoing" : "incoming"} user={user} requests={requests} loading={requestsLoading} error={requestsError} onRefresh={refreshRequests} />}
         {chatId && <Conversation key={chatId} requestId={chatId} user={user} />}
 
         {isEditing && selectedStudent?.id === user.id && (
@@ -667,7 +669,7 @@ function App({ user, onLogout, route, onUserUpdated }) {
         </section>}
 
         {profileError.route === route && profileError.message && <p className="error-message" role="alert">{profileError.message}</p>}
-        {!isSearchPage && !profileId && !chatId && route !== "app/requests" && <div className="empty-state"><h2>Page not found</h2><a href="#/app">Back to Find peers</a></div>}
+        {!isSearchPage && !profileId && !chatId && !["app/requests", "app/requests/outgoing"].includes(route) && <div className="empty-state"><h2>Page not found</h2><a href="#/app">Back to Find peers</a></div>}
         {profileId && !(profileError.route === route && profileError.message) && selectedStudent?.id !== profileId && <p className="empty-state" role="status">Loading profile...</p>}
         {profileId && !isEditing && selectedStudent?.id === profileId && (
           <section className="profile-panel">

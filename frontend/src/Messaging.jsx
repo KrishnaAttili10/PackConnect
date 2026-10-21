@@ -26,8 +26,8 @@ export function ConnectionRequestForm({ student, defaultCourse, onRequestCreated
   </fieldset></form>;
 }
 
-export function RequestInbox({ user, requests, loading, error, onRefresh }) {
-  const [tab, setTab] = useState("incoming");
+export function RequestInbox({ user, requests, loading, error, onRefresh, initialTab = "incoming" }) {
+  const [tab, setTab] = useState(initialTab);
   const [busy, setBusy] = useState(null);
   const [actionError, setActionError] = useState("");
   async function respond(id, status) {

@@ -17,6 +17,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Send persistent advice requests, view incoming/outgoing requests, and accept or decline as the recipient.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
 - Automatically seed a local SQLite database with sample students on first backend startup.
+- Get in-app bell notifications for incoming requests, request decisions, and new chat messages. Read/unread state is saved per account.
 - Chat privately after acceptance. Both participants can send messages of up to 2,000 characters, and conversations persist across visits. Open chats refresh every three seconds.
 
 ## Tech stack
@@ -322,3 +323,19 @@ The Requests list refreshes on navigation and every eight seconds. Open chats
 poll every three seconds and fetch history in batches of 100. Requests/messages
 survive reloads and backend restarts; sign in again if a development restart
 invalidates your session. See [messaging API and test instructions](docs/MESSAGING.md).
+
+### Notifications
+
+The header bell shows unread updates for new connection requests, accepted or
+declined requests, and new chat messages. Open it to inspect updates. Selecting
+an update marks it read and opens the relevant inbox, outgoing request, or chat.
+**Mark all as read** clears the unread state for updates up to the latest loaded
+notification, preserving newer arrivals. Read state persists across visits.
+
+Notifications refresh every five seconds while the app is open. No browser
+permission is needed; these are in-app alerts, not email or operating-system
+push notifications. Restart Flask after updating to create notification storage.
+Existing pending requests and completed decisions are backfilled once without
+resetting previously read updates. The panel shows the latest 50 events; the
+badge counts all unread events. Chat message content is not included in the
+notification preview. All notification APIs are scoped to the signed-in account.

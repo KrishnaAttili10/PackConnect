@@ -20,7 +20,7 @@ class DatabaseInitializationTests(unittest.TestCase):
                     self.assertEqual(names, {
                         "Alex Morgan", "Jordan Lee", "Taylor Kim", "Sam Patel",
                     })
-                    for table in ("accounts", "messages", "current_courses", "advice_requests", "chat_messages"):
+                    for table in ("accounts", "messages", "current_courses", "advice_requests", "chat_messages", "notifications"):
                         with self.subTest(table=table):
                             self.assertEqual(
                                 db.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0],

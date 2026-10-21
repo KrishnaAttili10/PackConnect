@@ -19,7 +19,7 @@ const pages = {
     sections: [
       ["Information you provide", "Registration stores your email, a password hash, and your student profile. Profile information includes your name, program, year, bio, interests, courses, skills, and advice topics. Avoid entering sensitive information into this prototype."],
       ["What other people can see", "Student profiles are discoverable through the API and app. Email addresses and password hashes are not included in public profile responses. Advice requests are visible only to their sender and recipient. After acceptance, only those two participants can read or send messages in that conversation."],
-      ["Storage and session cookies", "The current backend stores accounts, profiles, and messages in its SQLite database. A session cookie keeps you signed in for up to eight hours. Requests and chat messages persist across visits in the backend database. No analytics or advertising trackers are added by this app."],
+      ["Storage and session cookies", "The current backend stores accounts, profiles, and messages in its SQLite database. A session cookie keeps you signed in for up to eight hours. Requests, chat messages, notifications, and notification read status persist across visits in the backend database. No analytics or advertising trackers are added by this app."],
       ["Prototype limitations and requests", "This version has no automated account-deletion or password-reset flow. Contact the project maintainers through the repository for data questions, without posting passwords or personal records. Access controls and retention procedures are still being developed."],
     ],
   },
@@ -73,7 +73,7 @@ export default function AuthShell() {
     if (checking) return;
     if ((route === "app" || route.startsWith("app/")) && !user) window.location.hash = "/login";
     if (user && (route === "login" || route === "register")) window.location.hash = "/app";
-    document.title = `${pages[route]?.title || (route.startsWith("app/profile") ? "My profile" : route.startsWith("app/students/") ? "Student profile" : route.startsWith("app/chat/") ? "Conversation" : route === "app/requests" ? "Advice requests" : route === "app" ? "Find your people" : route === "register" ? "Create account" : "Sign in")} | PackConnect`;
+    document.title = `${pages[route]?.title || (route.startsWith("app/profile") ? "My profile" : route.startsWith("app/students/") ? "Student profile" : route.startsWith("app/chat/") ? "Conversation" : route.startsWith("app/requests") ? "Advice requests" : route === "app" ? "Find your people" : route === "register" ? "Create account" : "Sign in")} | PackConnect`;
   }, [route, user, checking]);
 
   async function signIn(event) {

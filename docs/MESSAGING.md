@@ -66,8 +66,24 @@ of old messages. Local browser checks exercised three isolated sessions: request
 creation, recipient acceptance, two-way polling chat, refresh persistence,
 third-user denial, and mobile layout.
 
-This implementation has no email/push notifications, read receipts, attachments,
+In-app bell notifications cover requests, decisions, and new messages. This
+implementation has no email/push notifications, read receipts, attachments,
 blocking, or message deletion. It uses polling, not WebSockets. Access is private
 at the application API level; this does not claim end-to-end encryption. Configure
 a persistent private `FLASK_SECRET_KEY` for sessions across backend restarts and
 HTTPS with `COOKIE_SECURE=true` for deployment, as described in README.
+
+## Notification API
+
+- `GET /api/notifications`: latest 50 updates plus `unread_count` across all updates.
+- `POST /api/notifications/<id>/read`: mark one of your own notifications read.
+- `POST /api/notifications/read`: JSON `through_id` marks your notifications up
+  to that ID read, so concurrent newer arrivals remain unread.
+
+Authentication is required. Other users' notification IDs return 404. Notification
+creation shares the request/decision/message transaction; repeated decisions do
+not generate duplicate alerts. Existing pending requests and completed decisions
+are backfilled using unique event keys, preserving read state on later startups.
+The frontend polls every five seconds, marks clicked alerts read, and supports
+outside-click/Escape dismissal. New-message alerts link to the accepted chat;
+request-received alerts open Incoming and declined decisions open Outgoing.
