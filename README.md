@@ -239,6 +239,9 @@ The client is available as `supabase` in `backend/app.py`. API routes currently
 store data in SQLite; this connection setup does not migrate data or switch
 those routes to Supabase.
 
+See [Supabase schema and verification](docs/SUPABASE.md) for the versioned SQL
+baseline, application instructions, and opt-in live read/write test.
+
 ### Existing clones: back up before pulling the database removal
 
 Stop the Flask backend before making a file backup. From the repository root:
