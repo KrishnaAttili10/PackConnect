@@ -28,6 +28,10 @@ class RegistrationTests(PostgresTestCase):
         results = self.client.get("/api/students/search?course=CSC%20510").get_json()["students"]
         self.assertIn(student["id"], [row["id"] for row in results])
         profile = self.client.get(f"/api/students/{student['id']}").get_json()["student"]
+        self.assertEqual(profile["completed_courses"], ["CSC 510", "CSC 540"])
+        self.assertEqual(profile["current_courses"], [])
+        for field in ("name", "program", "year", "willing_to_advise"):
+            self.assertEqual(profile[field], student[field])
         for private_field in ["email", "password", "password_hash", "auth_user_id"]:
             self.assertNotIn(private_field, student)
             self.assertNotIn(private_field, profile)
@@ -67,6 +71,35 @@ class RegistrationTests(PostgresTestCase):
         self.assertNotIn(student_id, [row["id"] for row in results])
         with portal.get_db() as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()["count"], 1)
+
+    def test_each_required_registration_field_is_required(self):
+        for field in ("name", "email", "password", "program", "year"):
+            for value in ("missing", "", "   "):
+                with self.subTest(field=field, value=value):
+                    payload = {**self.payload, field: value}
+                    if value == "missing":
+                        payload.pop(field)
+                    response = self.client.post("/api/auth/register", json=payload)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn("error", response.get_json())
+        with portal.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()["count"], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM students").fetchone()["count"], 4)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM completed_courses").fetchone()["count"], 7)
+
+    def test_malformed_registration_bodies_do_not_create_profiles_or_courses(self):
+        for body, content_type in [("", "application/json"), ('{"name":', "application/json"),
+                                   ("null", "application/json"), ('"text"', "application/json"),
+                                   ("42", "application/json"), ("[]", "application/json"),
+                                   ('{"name":"Owner"}', "text/plain")]:
+            with self.subTest(body=body, content_type=content_type):
+                response = self.client.post("/api/auth/register", data=body, content_type=content_type)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("error", response.get_json())
+        with portal.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()["count"], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM students").fetchone()["count"], 4)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM completed_courses").fetchone()["count"], 7)
 
 
 if __name__ == "__main__":

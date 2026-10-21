@@ -60,14 +60,14 @@ app.register_blueprint(create_messaging_blueprint(get_db))
 
 
 def normalize_courses(courses):
-    if not isinstance(courses, list):
-        return []
+    if not isinstance(courses, list) or any(not isinstance(course, str) for course in courses):
+        raise ValueError("Courses must be a list of course-code strings.")
 
     normalized = []
     seen = set()
 
     for course in courses:
-        course_code = str(course).strip().upper()
+        course_code = course.strip().upper()
         if course_code and course_code not in seen:
             normalized.append(course_code)
             seen.add(course_code)
@@ -76,16 +76,17 @@ def normalize_courses(courses):
 
 
 def profile_payload(data):
-    return {
-        "name": str(data.get("name", "")).strip(),
-        "program": str(data.get("program", "")).strip(),
-        "year": str(data.get("year", "")).strip(),
-        "bio": str(data.get("bio", "")).strip(),
-        "interests": str(data.get("interests", "")).strip(),
-        "skills": str(data.get("skills", "")).strip(),
-        "advice_topics": str(data.get("advice_topics", "")).strip(),
-        "willing_to_advise": bool(data.get("willing_to_advise", True)),
-    }
+    payload = {}
+    for field in ("name", "program", "year", "bio", "interests", "skills", "advice_topics"):
+        value = data.get(field, "")
+        if not isinstance(value, str):
+            raise ValueError(f"{field.replace('_', ' ').capitalize()} must be text.")
+        payload[field] = value.strip()
+    willing = data.get("willing_to_advise", True)
+    if not isinstance(willing, bool):
+        raise ValueError("Willing to advise must be true or false.")
+    payload["willing_to_advise"] = willing
+    return payload
 
 
 def replace_courses(db, table_name, student_id, courses):
@@ -346,15 +347,17 @@ def update_student(student_id):
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Send a JSON object with your profile details."}), 400
-    payload = profile_payload(data)
+    try:
+        payload = profile_payload(data)
+        completed_courses = normalize_courses(data.get("completed_courses", []))
+        current_courses = normalize_courses(data.get("current_courses", []))
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
 
     if not payload["name"] or not payload["program"] or not payload["year"]:
         return jsonify({
             "error": "Name, program, and year are required."
         }), 400
-
-    completed_courses = normalize_courses(data.get("completed_courses", []))
-    current_courses = normalize_courses(data.get("current_courses", []))
 
     with get_db() as db:
         existing_student = db.execute("""

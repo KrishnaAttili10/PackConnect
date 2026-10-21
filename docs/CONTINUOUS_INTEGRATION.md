@@ -20,6 +20,9 @@ No live Supabase credentials or GitHub repository secrets are required. The
 schema fixtures supply the minimal Supabase roles and Auth reference table.
 Live integration tests are skipped unless explicitly enabled.
 
+See [profile and advanced-search test evidence](PROFILE_SEARCH_TESTS.md) for
+the regression scenarios added for issue #9 and their recorded local results.
+
 Dependency download caches are keyed by the backend requirements or frontend
 lockfile; frontend packages are installed with `npm ci` from the lockfile.
 
