@@ -4,7 +4,7 @@
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
-> **Project status:** Early working prototype. The application includes fictional sample students and account registration. Login uses password verification and session cookies. Advice requests persist in SQLite; acceptance unlocks private two-person chat. Course histories remain self-reported.
+> **Project status:** Early working prototype. The application supports account registration. Login uses password verification and session cookies. Advice requests and accepted private chats use Supabase-backed storage. Course histories remain self-reported.
 
 See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, limitations, and outstanding work.
 
@@ -16,7 +16,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Display matching students who opted in to offer advice by default; the availability filter can include other profiles.
 - Send persistent advice requests, view incoming/outgoing requests, and accept or decline as the recipient.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
-- Automatically seed a local SQLite database with sample students on first backend startup.
+- Use Supabase as the sole database, without automatically inserting fictional sample students.
 - Get in-app bell notifications for incoming requests, request decisions, and new chat messages. Read/unread state is saved per account.
 - Chat privately after acceptance. Both participants can send messages of up to 2,000 characters, and conversations persist across visits. Open chats refresh every three seconds.
 
@@ -26,7 +26,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 | --- | --- |
 | Frontend | React + Vite |
 | Backend | Python + Flask + Flask-CORS |
-| Database | SQLite |
+| Database | Supabase (PostgreSQL) |
 | Development environment | PyCharm or any code editor |
 
 ## Project structure
@@ -34,8 +34,8 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 ```text
 PackConnect/
 ├── backend/
-│   ├── app.py             # Flask API and database initialization
-│   └── peer_advice.db     # Created locally from fictional seeds; not tracked
+│   ├── app.py             # Flask API and Supabase integration
+
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx        # Search and student profile UI
@@ -104,7 +104,7 @@ The backend should report:
 Running on http://127.0.0.1:5000
 ```
 
-On first startup, it creates `backend/peer_advice.db` and inserts fictional sample student records. Leave this terminal running.
+The backend connects to Supabase using the configuration in `backend/.env`. It does not create a local SQLite database or insert sample student records. Make sure your Supabase schema and environment variables are configured before starting. Leave this terminal running.
 
 > **PowerShell note:** If script execution is blocked when activating the virtual environment, you can skip activation and run `.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt` followed by `.\.venv\Scripts\python.exe backend/app.py`.
 
@@ -130,11 +130,10 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 
 ### 4. Try the application
 
-1. Search for `CSC 510`.
-2. The seeded database should return **Alex Morgan, Jordan Lee, and Sam Patel**.
-3. Click **View Profile** to see a student's details.
-4. Try `CSC 540` or `CSC 515` for other matches.
-5. To try requests and chat, create two accounts, opt the recipient into advising, and sign into them in separate browser profiles or a normal/incognito window. Send a request from a registered student profile. Accept it in the recipient's **Requests ? Incoming** tab, then open chat from either account. Seed profiles have no accounts and cannot receive requests.
+1. A fresh Supabase database should have no sample student profiles, so searches may initially return no results.
+2. Register two student accounts and add completed-course information to their profiles.
+3. Search for a course that a registered student has completed, then open that student's profile.
+4. To test requests and chat, opt the recipient into advising. Sign in to the two accounts in separate browser profiles or a normal/incognito window. Send an advice request, accept it from the recipient's incoming requests, and then open chat.
 
 ## API endpoints
 
@@ -165,8 +164,8 @@ The registration API accepts `name`, `email`, `password`, `program`, and `year`,
 - The frontend uses same-origin `/api` requests. Vite proxies them to `http://127.0.0.1:5000`; restart Vite after updating its configuration. Production hosting must proxy `/api` to Flask as well.
 - Vite usually runs on port **5173**. If that port is busy, use the URL printed by `npm run dev`.
 - Flask runs in **debug mode** for local development. Do not deploy the development server to production.
-- SQLite is the active storage backend. Runtime databases are ignored and are no longer tracked in this version. Existing clones must follow the backup instructions below before pulling the removal. Historical commits still contain the old database.
-- The example students are fictional; no real student information is required for the prototype.
+- Supabase is the sole database. The application does not create or use a local SQLite database, and existing SQLite data is not migrated.
+- Supabase should start without fictional sample profiles or messages.
 - Requests and chat use the signed-in account identity. Only the two participants can read requests/conversations, and only the recipient can accept or decline. Email/push notifications are not implemented.
 - Run backend messaging checks with `python -m unittest discover -s backend -p "test_*.py"` and frontend checks with `npm run build` and `npm run lint` from `frontend`.
 
@@ -227,44 +226,21 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 **Repository:** https://github.com/kkattili_ncstate/PackConnect
 
-### Supabase connection setup
+### Supabase setup for collaborators
 
-Install backend dependencies with `python -m pip install -r backend/requirements.txt`.
-To initialize the optional Supabase client, create `backend/.env` with
-`SUPABASE_URL` and `SUPABASE_SECRET_KEY` from your Supabase project. Keep this file
-local; it is ignored by Git. Both values must be set together. With neither set,
-the application runs locally without a Supabase client.
+Supabase is the application's only database. Each developer needs a local `backend/.env` file with these settings:
 
-The client is available as `supabase` in `backend/app.py`. API routes currently
-store data in SQLite; this connection setup does not migrate data or switch
-those routes to Supabase.
-
-### Existing clones: back up before pulling the database removal
-
-Stop the Flask backend before making a file backup. From the repository root:
-
-```powershell
-$databaseBackupDir = Join-Path $env:TEMP ("PackConnect-db-" + [guid]::NewGuid().ToString())
-New-Item -ItemType Directory -Path $databaseBackupDir | Out-Null
-Copy-Item -LiteralPath backend/peer_advice.db -Destination (Join-Path $databaseBackupDir "peer_advice.db")
-Write-Output "Database backup: $databaseBackupDir"
+```dotenv
+SUPABASE_URL=your_project_url
+SUPABASE_SECRET_KEY=your_server_secret_key
+SUPABASE_PUBLISHABLE_KEY=your_publishable_key
 ```
 
-Keep the printed backup path. Pulling or switching to a commit that removes the
-tracked database can delete that file from an existing checkout. After updating,
-restore the backup to `backend/peer_advice.db` if you want your previous local data.
-Do not add the restored file to Git.
+Get these values from the authorized Supabase project settings. Keep `.env` private and never commit it. Do not expose the secret key in frontend code.
 
-For a fresh clone, no database download is needed. Running
-`.\.venv\Scripts\python.exe backend/app.py` creates the SQLite database and four
-fictional student profiles. It creates no accounts or messages. Run
-`git ls-files '*.db'` to confirm no database is tracked, and
-`git check-ignore backend/peer_advice.db` to confirm the ignore rule applies.
+Install backend dependencies with `python -m pip install -r backend/requirements.txt` and configure the required Supabase schema before running the backend.
 
-This change stops future database tracking; it does not remove historical
-copies. The team must record its decision about historical data in the cleanup
-issue before closing it. Shared Git history has not been rewritten.
-
+The application does not seed fictional profiles or messages. Existing SQLite data is not migrated. If you need an old local database, preserve it privately and do not commit it. Removing a database from the current version does not remove copies from Git history; the team should assess historical cleanup separately.
 ### Automated checks
 
 GitHub Actions runs backend tests, frontend ESLint, and the frontend production

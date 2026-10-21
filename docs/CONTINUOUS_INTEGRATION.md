@@ -14,10 +14,7 @@ once the workflow exists on the default branch.
 Each job has a ten-minute timeout. Installation, test, lint, or build failures
 fail the corresponding job and workflow; failures are not suppressed.
 
-The backend tests use temporary SQLite databases. No running API server, local
-database, `.env` file, Supabase credentials, or GitHub repository secrets are
-required. CI leaves the optional Supabase variables empty. It installs the
-Supabase SDK because the application imports it, but makes no live service calls.
+The backend tests use a mocked Supabase client and do not require a live Supabase project, local database, `.env` file, or real credentials. The CI workflow supplies placeholder Supabase environment values for test execution. Tests should not make live service calls or modify shared Supabase data. The Supabase SDK is installed because the application imports it.
 
 Dependency download caches are keyed by the backend requirements or frontend
 lockfile; frontend packages are installed with `npm ci` from the lockfile.
