@@ -1,5 +1,7 @@
 # PackConnect — Peer Advice Portal
 
+[![Build](https://github.com/kkattili_ncstate/PackConnect/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/kkattili_ncstate/PackConnect/actions/workflows/ci.yml)
+
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
 > **Project status:** Early working prototype. The application includes fictional sample students and account registration. Messages can be saved locally; login, student inboxes, and verified course histories are not implemented yet.
@@ -259,3 +261,10 @@ fictional student profiles. It creates no accounts or messages. Run
 This change stops future database tracking; it does not remove historical
 copies. The team must record its decision about historical data in the cleanup
 issue before closing it. Shared Git history has not been rewritten.
+
+### Automated checks
+
+GitHub Actions runs backend tests, frontend ESLint, and the frontend production
+build on every push and pull request. No private credentials are required. See
+[CI instructions](docs/CONTINUOUS_INTEGRATION.md) for local commands and how to
+inspect a run. The build badge links to the live workflow evidence.
