@@ -4,7 +4,7 @@
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
-> **Project status:** Early working prototype. The application includes fictional sample students and account registration. Messages can be saved locally; login uses password verification and session cookies; student inboxes and verified course histories are not implemented yet.
+> **Project status:** Early working prototype. The application includes fictional sample students and account registration. Login uses password verification and session cookies. Advice requests persist in SQLite; acceptance unlocks private two-person chat. Course histories remain self-reported.
 
 See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, limitations, and outstanding work.
 
@@ -14,10 +14,10 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Create and edit profiles with completed/current courses, skills, and advice topics. Only the signed-in owner can edit their profile; the API rejects unauthenticated or non-owner updates.
 - Search by course code (for example, `CSC 510`) and filter by program, year, skills, advice topics, and advising availability.
 - Display matching students who opted in to offer advice by default; the availability filter can include other profiles.
-- Create and accept/decline advice requests within the current browser session. Requests are not delivered or saved and disappear on reload.
+- Send persistent advice requests, view incoming/outgoing requests, and accept or decline as the recipient.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
 - Automatically seed a local SQLite database with sample students on first backend startup.
-- Send an advice message from a student's profile using your name and a message of up to 2,000 characters. Messages are saved in SQLite; there is no inbox or notification delivery yet.
+- Chat privately after acceptance. Both participants can send messages of up to 2,000 characters, and conversations persist across visits. Open chats refresh every three seconds.
 
 ## Tech stack
 
@@ -133,7 +133,7 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 2. The seeded database should return **Alex Morgan, Jordan Lee, and Sam Patel**.
 3. Click **View Profile** to see a student's details.
 4. Try `CSC 540` or `CSC 515` for other matches.
-5. Open a profile, enter your name and message, and click **Send Message**. Restart the backend after updating so it creates the messages table in your existing database.
+5. To try requests and chat, create two accounts, opt the recipient into advising, and sign into them in separate browser profiles or a normal/incognito window. Send a request from a registered student profile. Accept it in the recipient's **Requests ? Incoming** tab, then open chat from either account. Seed profiles have no accounts and cannot receive requests.
 
 ## API endpoints
 
@@ -143,7 +143,9 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 | POST | `/api/auth/register` | Creates an account and student profile; returns 201, 400 for invalid input, or 409 for a duplicate email |
 | GET | `/api/students/search?course=CSC%20510` | Finds opted-in students who completed the specified course |
 | GET | `/api/students/1` | Retrieves a student's full profile |
-| POST | `/api/students/1/messages` | Saves a message; JSON body: `{"sender_name":"Casey","body":"Any study tips?"}` |
+| GET / POST | `/api/requests` | List your requests or create one for another registered advisor |
+| PATCH | `/api/requests/1` | Recipient accepts/declines a pending request |
+| GET / POST | `/api/requests/1/messages` | Read/send messages after acceptance; participants only |
 
 Quick browser checks:
 
@@ -164,7 +166,7 @@ The registration API accepts `name`, `email`, `password`, `program`, and `year`,
 - Flask runs in **debug mode** for local development. Do not deploy the development server to production.
 - SQLite is the active storage backend. Runtime databases are ignored and are no longer tracked in this version. Existing clones must follow the backup instructions below before pulling the removal. Historical commits still contain the old database.
 - The example students are fictional; no real student information is required for the prototype.
-- Messaging currently saves messages locally with a self-reported sender name. Login, inboxes, and notifications are planned features.
+- Requests and chat use the signed-in account identity. Only the two participants can read requests/conversations, and only the recipient can accept or decline. Email/push notifications are not implemented.
 - Run backend messaging checks with `python -m unittest discover -s backend -p "test_*.py"` and frontend checks with `npm run build` and `npm run lint` from `frontend`.
 
 ## Common troubleshooting
@@ -217,7 +219,7 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 - Authenticated permissions for the remaining profile-creation and messaging endpoints.
 - Course completion reporting and richer course discovery.
-- Persistent advice requests, recipient inboxes, and authenticated messaging.
+- Message read receipts, notifications, and conversation management.
 - Improved testing, validation, privacy, and deployment configuration.
 
 ---
@@ -282,20 +284,41 @@ Refresh restores a valid session; Sign out clears it. For stable sessions across
 backend restarts, set `FLASK_SECRET_KEY` to a strong private value in `backend/.env`.
 Without it, development uses a fresh random key per process. Use HTTPS and set
 `COOKIE_SECURE=true` when deploying. The login gate controls frontend navigation;
-profile updates require the signed-in owner. Standalone profile creation and
-message endpoints still need additional permissions. Password reset, email verification, and login rate limiting are not
-implemented in this change.
+Profile updates require the signed-in owner. Standalone profile creation still
+needs additional permissions. Chat and advice requests require authentication
+and participant access. Password reset, email verification, and login rate
+limiting are not implemented in this change.
 
 ### Workspace pages
 
 - `#/app`: Find peers with course search, collapsible advanced filters, and removable filter chips.
-- `#/app/students/<id>`: A dedicated student profile, including advice/message forms when available.
+- `#/app/students/<id>`: A dedicated student profile, including an advice request form for registered advisors and chat links for existing connections.
 - `#/app/profile`: Your own profile, with an Edit Profile button.
 - `#/app/profile/edit`: Edit your own profile; Save persists changes and Cancel discards edits.
-- `#/app/requests`: Session-only request preview, not a persistent recipient inbox.
+- `#/app/requests`: Persistent Incoming and Outgoing requests, recipient accept/decline controls, and accepted conversation links.
 
 Shared navigation includes a mobile menu. Profile links support refresh and
 browser Back/Forward. Profiles are created during registration; the search page
 no longer offers duplicate profile creation. `PUT /api/students/<id>` returns
 401 without a session, 403 for another user's profile, and 400 for invalid input.
 Permission failures do not modify profile or course records.
+
+### Persistent requests and private chat
+
+Restart Flask after updating to create the new tables automatically. Existing
+profiles, accounts, and legacy messages are retained. Old unauthenticated
+messages are not imported into private conversations because they lack verified
+sender identities. The previous `/api/students/<id>/messages` endpoint now
+returns 410; clients must use accepted-request conversations.
+
+`#/app/chat/<request-id>` opens a conversation. Only its sender and recipient can
+read or send messages, and only after acceptance. One pending/accepted connection
+is allowed per student pair, including requests in the opposite direction.
+Declined requests stay in history, and a new request may be sent. Accepted or
+declined decisions cannot be reversed through the API. Turning off future advice
+availability does not delete existing connections or messages.
+
+The Requests list refreshes on navigation and every eight seconds. Open chats
+poll every three seconds and fetch history in batches of 100. Requests/messages
+survive reloads and backend restarts; sign in again if a development restart
+invalidates your session. See [messaging API and test instructions](docs/MESSAGING.md).

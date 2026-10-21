@@ -6,6 +6,7 @@ import re
 from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
 from contextlib import contextmanager
+from messaging import create_messaging_blueprint, initialize_messaging
 
 import os
 import secrets
@@ -49,6 +50,9 @@ def get_db():
             yield connection
     finally:
         connection.close()
+
+
+app.register_blueprint(create_messaging_blueprint(get_db))
 
 
 def ensure_student_columns(db):
@@ -131,6 +135,7 @@ def fetch_student(db, student_id):
     """, (student_id,)).fetchall()
 
     profile = dict(student)
+    profile["can_receive_requests"] = bool(db.execute("SELECT 1 FROM accounts WHERE student_id = ?", (student_id,)).fetchone())
     profile["completed_courses"] = [
         row["course_code"] for row in completed_courses
     ]
@@ -197,6 +202,8 @@ def initialize_database():
                 FOREIGN KEY (recipient_id) REFERENCES students(id)
             )
         """)
+
+        initialize_messaging(db)
 
         count = db.execute(
             "SELECT COUNT(*) FROM students"
@@ -555,37 +562,7 @@ def update_student(student_id):
 
 @app.route("/api/students/<int:student_id>/messages", methods=["POST"])
 def send_message(student_id):
-    data = request.get_json(silent=True)
-    if not isinstance(data, dict):
-        return jsonify({"error": "Send a JSON object with sender_name and body."}), 400
-
-    sender_name = data.get("sender_name")
-    body = data.get("body")
-    if not isinstance(sender_name, str) or not sender_name.strip():
-        return jsonify({"error": "Please enter your name."}), 400
-    if not isinstance(body, str) or not body.strip():
-        return jsonify({"error": "Please enter a message."}), 400
-    sender_name, body = sender_name.strip(), body.strip()
-    if len(sender_name) > 100 or len(body) > 2000:
-        return jsonify({"error": "Name must be at most 100 characters and message at most 2000 characters."}), 400
-
-    with get_db() as db:
-        student = db.execute(
-            "SELECT willing_to_advise FROM students WHERE id = ?", (student_id,)
-        ).fetchone()
-        if student is None:
-            return jsonify({"error": "Student not found"}), 404
-        if not student["willing_to_advise"]:
-            return jsonify({"error": "This student is not currently accepting advice messages."}), 403
-        cursor = db.execute("""
-            INSERT INTO messages (recipient_id, sender_name, body)
-            VALUES (?, ?, ?)
-        """, (student_id, sender_name, body))
-        message = db.execute(
-            "SELECT * FROM messages WHERE id = ?", (cursor.lastrowid,)
-        ).fetchone()
-
-    return jsonify({"message": dict(message)}), 201
+    return jsonify({"error": "Direct messages have moved to accepted-request conversations. Open Requests to chat."}), 410
 
 
 if __name__ == "__main__":

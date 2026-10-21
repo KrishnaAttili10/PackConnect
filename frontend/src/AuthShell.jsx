@@ -10,7 +10,7 @@ const pages = {
     sections: [
       ["Built around your courses", "Find peers by completed courses, program, interests, skills, and the topics you want help with. Read their profiles and start a conversation."],
       ["Give back to your Pack", "Create a profile, share your experience, and choose whether you are available to advise. A useful tip can make someone else's semester easier."],
-      ["A student-built prototype", "PackConnect is a course project, not an official NC State service. Sample profiles are fictional. Course histories are self-reported, and advice requests currently last only for the current browser session."],
+      ["A student-built prototype", "PackConnect is a course project, not an official NC State service. Sample profiles are fictional. Course histories are self-reported, and advice requests and accepted-request conversations are saved in the backend."],
     ],
   },
   privacy: {
@@ -18,8 +18,8 @@ const pages = {
     intro: "How this PackConnect prototype handles information. Updated October 20, 2026.",
     sections: [
       ["Information you provide", "Registration stores your email, a password hash, and your student profile. Profile information includes your name, program, year, bio, interests, courses, skills, and advice topics. Avoid entering sensitive information into this prototype."],
-      ["What other people can see", "Student profiles are discoverable through the API and app. Email addresses and password hashes are not included in public profile responses. Saved messages include the sender name and message text; there is no private recipient inbox yet."],
-      ["Storage and session cookies", "The current backend stores accounts, profiles, and messages in its SQLite database. A session cookie keeps you signed in for up to eight hours. Advice requests are held in page memory and disappear on reload. No analytics or advertising trackers are added by this app."],
+      ["What other people can see", "Student profiles are discoverable through the API and app. Email addresses and password hashes are not included in public profile responses. Advice requests are visible only to their sender and recipient. After acceptance, only those two participants can read or send messages in that conversation."],
+      ["Storage and session cookies", "The current backend stores accounts, profiles, and messages in its SQLite database. A session cookie keeps you signed in for up to eight hours. Requests and chat messages persist across visits in the backend database. No analytics or advertising trackers are added by this app."],
       ["Prototype limitations and requests", "This version has no automated account-deletion or password-reset flow. Contact the project maintainers through the repository for data questions, without posting passwords or personal records. Access controls and retention procedures are still being developed."],
     ],
   },
@@ -73,7 +73,7 @@ export default function AuthShell() {
     if (checking) return;
     if ((route === "app" || route.startsWith("app/")) && !user) window.location.hash = "/login";
     if (user && (route === "login" || route === "register")) window.location.hash = "/app";
-    document.title = `${pages[route]?.title || (route.startsWith("app/profile") ? "My profile" : route.startsWith("app/students/") ? "Student profile" : route === "app/requests" ? "Advice requests" : route === "app" ? "Find your people" : route === "register" ? "Create account" : "Sign in")} | PackConnect`;
+    document.title = `${pages[route]?.title || (route.startsWith("app/profile") ? "My profile" : route.startsWith("app/students/") ? "Student profile" : route.startsWith("app/chat/") ? "Conversation" : route === "app/requests" ? "Advice requests" : route === "app" ? "Find your people" : route === "register" ? "Create account" : "Sign in")} | PackConnect`;
   }, [route, user, checking]);
 
   async function signIn(event) {

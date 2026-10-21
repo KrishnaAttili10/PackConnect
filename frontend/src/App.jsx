@@ -1,6 +1,8 @@
 
 import { useEffect, useState } from "react";
 import "./App.css";
+import { ConnectionRequestForm, RequestInbox, Conversation } from "./Messaging";
+import { useRequests } from "./useRequests";
 
 const API_URL = "";
 
@@ -25,14 +27,6 @@ const emptyFilters = {
   availableOnly: true,
 };
 
-const emptyConnectionRequest = {
-  requester_name: "",
-  requester_email: "",
-  course_code: "",
-  advice_topic: "",
-  message: "",
-};
-
 function coursesToText(courses = []) {
   return Array.isArray(courses) ? courses.join(", ") : "";
 }
@@ -42,270 +36,6 @@ function textToCourses(value) {
     .split(/[,\n]/)
     .map((courseCode) => courseCode.trim())
     .filter(Boolean);
-}
-
-function MessageForm({ student }) {
-  const [senderName, setSenderName] = useState("");
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  async function sendMessage(event) {
-    event.preventDefault();
-    if (sending) return;
-    setError("");
-    setSuccess("");
-    if (!senderName.trim() || !body.trim()) {
-      setError("Please enter your name and a message.");
-      return;
-    }
-    setSending(true);
-    try {
-      const response = await fetch(`${API_URL}/api/students/${student.id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sender_name: senderName.trim(), body: body.trim() }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to send message.");
-      setBody("");
-      setSuccess(`Message to ${student.name} saved successfully.`);
-    } catch (err) {
-      setError(err.message || "Could not send your message. Please try again.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <form className="message-form" onSubmit={sendMessage}>
-      <h4>Send a message to {student.name}</h4>
-      <p className="profile-note">Prototype: messages are saved locally. Student inboxes are not available yet.</p>
-      <label htmlFor="sender-name">Your name</label>
-      <input id="sender-name" value={senderName} onChange={(event) => { setSenderName(event.target.value); setSuccess(""); }} maxLength={100} required disabled={sending} autoComplete="name" />
-      <label htmlFor="message-body">Message</label>
-      <textarea id="message-body" value={body} onChange={(event) => { setBody(event.target.value); setSuccess(""); }} maxLength={2000} required disabled={sending} rows={5} placeholder="Ask about coursework, study tips, or their experience..." aria-describedby="message-count" />
-      <span id="message-count" className="message-count">{body.length}/2000 characters</span>
-      {error && <p className="error-message" role="alert">{error}</p>}
-      {success && <p className="message-success" role="status">{success}</p>}
-      <button type="submit" disabled={sending || !senderName.trim() || !body.trim()}>{sending ? "Sending..." : "Send Message"}</button>
-    </form>
-  );
-}
-
-function ConnectionRequestForm({ student, defaultCourse, onRequestCreated }) {
-  const [requestForm, setRequestForm] = useState({
-    ...emptyConnectionRequest,
-    course_code: defaultCourse,
-  });
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  function updateRequestField(field, value) {
-    setRequestForm((currentForm) => ({
-      ...currentForm,
-      [field]: value,
-    }));
-  }
-
-  async function submitRequest(event) {
-    event.preventDefault();
-    if (submitting) return;
-
-    setError("");
-    setSuccess("");
-    setSubmitting(true);
-
-    try {
-      const request = {
-        id: crypto.randomUUID(),
-        student_id: student.id,
-        student_name: student.name,
-        requester_name: requestForm.requester_name.trim(),
-        requester_email: requestForm.requester_email.trim(),
-        course_code: requestForm.course_code.trim().toUpperCase(),
-        advice_topic: requestForm.advice_topic.trim(),
-        message: requestForm.message.trim(),
-        status: "pending",
-        created_at: new Date().toISOString(),
-      };
-
-      setSuccess(`Request sent to ${student.name}.`);
-      setRequestForm({
-        ...emptyConnectionRequest,
-        course_code: defaultCourse,
-      });
-      onRequestCreated(request);
-    } catch (err) {
-      setError(err.message || "Could not send the request.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form className="request-form" onSubmit={submitRequest}>
-      <h4>Request advice from {student.name}</h4>
-      <p className="profile-note">
-        Send context first. Messaging should happen after the request is accepted.
-      </p>
-
-      <div className="request-grid">
-        <label>
-          Your name
-          <input
-            value={requestForm.requester_name}
-            onChange={(event) =>
-              updateRequestField("requester_name", event.target.value)
-            }
-            maxLength={100}
-            required
-            disabled={submitting}
-          />
-        </label>
-
-        <label>
-          Email
-          <input
-            type="email"
-            value={requestForm.requester_email}
-            onChange={(event) =>
-              updateRequestField("requester_email", event.target.value)
-            }
-            maxLength={160}
-            disabled={submitting}
-          />
-        </label>
-
-        <label>
-          Course
-          <input
-            value={requestForm.course_code}
-            onChange={(event) =>
-              updateRequestField("course_code", event.target.value)
-            }
-            placeholder="CSC 510"
-            maxLength={30}
-            required
-            disabled={submitting}
-          />
-        </label>
-
-        <label>
-          Advice topic
-          <input
-            value={requestForm.advice_topic}
-            onChange={(event) =>
-              updateRequestField("advice_topic", event.target.value)
-            }
-            placeholder="Projects, workload, prep"
-            maxLength={80}
-            required
-            disabled={submitting}
-          />
-        </label>
-
-        <label className="wide-field">
-          Message
-          <textarea
-            value={requestForm.message}
-            onChange={(event) =>
-              updateRequestField("message", event.target.value)
-            }
-            placeholder="Share what you want help with and why this student seems relevant."
-            maxLength={1000}
-            rows={4}
-            required
-            disabled={submitting}
-          />
-        </label>
-      </div>
-
-      {error && <p className="error-message" role="alert">{error}</p>}
-      {success && <p className="message-success" role="status">{success}</p>}
-
-      <button
-        type="submit"
-        disabled={
-          submitting ||
-          !requestForm.requester_name.trim() ||
-          !requestForm.course_code.trim() ||
-          !requestForm.advice_topic.trim() ||
-          !requestForm.message.trim()
-        }
-      >
-        {submitting ? "Sending..." : "Send Request"}
-      </button>
-    </form>
-  );
-}
-
-function RequestReviewPanel({ requests, loading, onStatusChange, onRefresh }) {
-  return (
-    <section className="request-panel">
-      <div className="section-heading">
-        <div>
-          <h3>Advice requests</h3>
-          <p>These are previews in your current tab. They are not delivered and clear on reload.</p>
-        </div>
-        <button type="button" onClick={onRefresh}>
-          Clear handled
-        </button>
-      </div>
-
-      {loading ? (
-        <p className="empty-state">Loading requests...</p>
-      ) : requests.length === 0 ? (
-        <p className="empty-state">No advice requests yet.</p>
-      ) : (
-        <div className="request-list">
-          {requests.map((request) => (
-            <article className="request-card" key={request.id}>
-              <div>
-                <div className="request-card-header">
-                  <strong>{request.requester_name}</strong>
-                  <span className={`status-badge ${request.status}`}>
-                    {request.status}
-                  </span>
-                </div>
-                <p>
-                  wants advice from <strong>{request.student_name}</strong> for{" "}
-                  <strong>{request.course_code}</strong>
-                </p>
-                <p>
-                  <strong>Topic: </strong>
-                  {request.advice_topic}
-                </p>
-                <p>{request.message}</p>
-                {request.requester_email && (
-                  <p className="profile-note">{request.requester_email}</p>
-                )}
-              </div>
-
-              {request.status === "pending" && (
-                <div className="request-actions">
-                  <button
-                    type="button"
-                    onClick={() => onStatusChange(request.id, "accepted")}
-                  >
-                    Accept
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onStatusChange(request.id, "declined")}
-                  >
-                    Decline
-                  </button>
-                </div>
-              )}
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
 }
 
 function App({ user, onLogout, route, onUserUpdated }) {
@@ -321,8 +51,8 @@ function App({ user, onLogout, route, onUserUpdated }) {
   const [profileForm, setProfileForm] = useState(emptyProfile);
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [requests, setRequests] = useState([]);
-  const [requestsLoading] = useState(false);
+  const { requests, loading: requestsLoading, error: requestsError, refresh: refreshRequests } = useRequests(route);
+  const chatId = /^app\/chat\/[1-9]\d*$/.test(route) ? Number(route.split("/")[2]) : null;
   const [profileSaving, setProfileSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -388,27 +118,6 @@ function App({ user, onLogout, route, onUserUpdated }) {
     } finally {
       setLoading(false);
     }
-  }
-
-  function addConnectionRequest(request) {
-    setRequests((currentRequests) => [request, ...currentRequests]);
-  }
-
-  function updateConnectionRequestStatus(requestId, status) {
-    setError("");
-    setNotice("");
-    setRequests((currentRequests) =>
-      currentRequests.map((request) =>
-        request.id === requestId ? { ...request, status } : request
-      )
-    );
-    setNotice(`Request ${status}.`);
-  }
-
-  function clearHandledRequests() {
-    setRequests((currentRequests) =>
-      currentRequests.filter((request) => request.status === "pending")
-    );
   }
 
   function updateProfileField(field, value) {
@@ -731,13 +440,8 @@ function App({ user, onLogout, route, onUserUpdated }) {
 
         </section>}
 
-        {route === "app/requests" && <><div className="page-intro"><span className="eyebrow">YOUR CONNECTIONS</span><h2>Advice requests</h2><p>This is a session-only preview. Requests are not delivered to other users and disappear when you reload.</p></div>
-        <RequestReviewPanel
-          requests={requests}
-          loading={requestsLoading}
-          onStatusChange={updateConnectionRequestStatus}
-          onRefresh={clearHandledRequests}
-        /></>}
+        {route === "app/requests" && <RequestInbox user={user} requests={requests} loading={requestsLoading} error={requestsError} onRefresh={refreshRequests} />}
+        {chatId && <Conversation key={chatId} requestId={chatId} user={user} />}
 
         {isEditing && selectedStudent?.id === user.id && (
           <section className="profile-editor">
@@ -963,7 +667,7 @@ function App({ user, onLogout, route, onUserUpdated }) {
         </section>}
 
         {profileError.route === route && profileError.message && <p className="error-message" role="alert">{profileError.message}</p>}
-        {!isSearchPage && !profileId && route !== "app/requests" && <div className="empty-state"><h2>Page not found</h2><a href="#/app">Back to Find peers</a></div>}
+        {!isSearchPage && !profileId && !chatId && route !== "app/requests" && <div className="empty-state"><h2>Page not found</h2><a href="#/app">Back to Find peers</a></div>}
         {profileId && !(profileError.route === route && profileError.message) && selectedStudent?.id !== profileId && <p className="empty-state" role="status">Loading profile...</p>}
         {profileId && !isEditing && selectedStudent?.id === profileId && (
           <section className="profile-panel">
@@ -1050,14 +754,15 @@ function App({ user, onLogout, route, onUserUpdated }) {
                 </button>}
               </div>
             </div>
-            {selectedStudent.id !== user.id && selectedStudent.willing_to_advise ? <>
-            <ConnectionRequestForm
-              key={`request-${selectedStudent.id}`}
-              student={selectedStudent}
-              defaultCourse={course}
-              onRequestCreated={addConnectionRequest}
-            />
-            <MessageForm key={`message-${selectedStudent.id}`} student={selectedStudent} /></> : selectedStudent.id !== user.id && <p className="profile-note">This student is not currently available for advice.</p>}
+            {selectedStudent.id !== user.id && (() => {
+              const existing = requests.find((item) => item.sender_id === selectedStudent.id || item.recipient_id === selectedStudent.id);
+              if (existing?.status === "accepted") return <p className="message-success">You're connected. <a className="chat-open" href={`#/app/chat/${existing.id}`}>Open chat</a></p>;
+              if (existing?.status === "pending") return <p className="profile-note">A request is awaiting a response. <a href="#/app/requests">View requests</a></p>;
+              if (!selectedStudent.can_receive_requests) return <p className="profile-note">This sample profile has no registered account to receive requests. Connect with a registered student instead.</p>;
+              if (!selectedStudent.willing_to_advise) return <p className="profile-note">This student is not currently available for advice.</p>;
+              return <ConnectionRequestForm key={selectedStudent.id} student={selectedStudent} defaultCourse={course} onRequestCreated={refreshRequests} />;
+            })()}
+
           </section>
         )}
       </main>
