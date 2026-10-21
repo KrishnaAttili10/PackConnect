@@ -1,8 +1,9 @@
 # Advice requests and private conversations
 
-The active storage is SQLite. Restart Flask after pulling this change so
-`initialize_database()` adds `advice_requests`, `chat_messages`, and their
-indexes. Existing data is retained. No Supabase credentials are required.
+All messaging storage is in Supabase PostgreSQL. Configure `SUPABASE_DB_URL`,
+apply migrations with `python backend/migrate.py`, then restart Flask.
+Request/message writes and their notifications commit in the same transaction.
+See [database setup and verification](SUPABASE.md).
 
 ## Try it with two accounts
 
@@ -51,6 +52,9 @@ identity and are not exposed as private chat. The old direct-message route
 returns 410, closing the previous path around request acceptance.
 
 ## Verification and limits
+
+Set `TEST_DATABASE_URL` to a dedicated localhost PostgreSQL database first;
+see [test setup](SUPABASE.md).
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s backend -p "test_*.py" -v

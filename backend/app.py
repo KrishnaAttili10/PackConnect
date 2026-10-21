@@ -1,16 +1,18 @@
 
 from flask import Flask, jsonify, request, session
 from flask_cors import CORS
-import sqlite3
+from flask.json.provider import DefaultJSONProvider
+from psycopg import OperationalError
+from psycopg.errors import UniqueViolation
 import re
 from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
-from contextlib import contextmanager
 from messaging import create_messaging_blueprint, initialize_messaging
+from database import connect_database
 
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
 
@@ -28,7 +30,16 @@ supabase = (
     else None
 )
 
+class PortalJSONProvider(DefaultJSONProvider):
+    @staticmethod
+    def default(value):
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return DefaultJSONProvider.default(value)
+
+
 app = Flask(__name__)
+app.json = PortalJSONProvider(app)
 app.config.update(
     SECRET_KEY=os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32),
     SESSION_COOKIE_HTTPONLY=True,
@@ -38,31 +49,14 @@ app.config.update(
 )
 CORS(app)
 
-DB_PATH = Path(__file__).parent / "peer_advice.db"
+app.config["SUPABASE_DB_URL"] = os.getenv("SUPABASE_DB_URL")
 
 
-@contextmanager
 def get_db():
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    try:
-        with connection:
-            yield connection
-    finally:
-        connection.close()
+    return connect_database(app.config.get("SUPABASE_DB_URL"), app.config.get("TEST_DB_SCHEMA"))
 
 
 app.register_blueprint(create_messaging_blueprint(get_db))
-
-
-def ensure_student_columns(db):
-    existing_columns = {
-        row["name"] for row in db.execute("PRAGMA table_info(students)")
-    }
-
-    for column in ("skills", "advice_topics"):
-        if column not in existing_columns:
-            db.execute(f"ALTER TABLE students ADD COLUMN {column} TEXT")
 
 
 def normalize_courses(courses):
@@ -90,21 +84,19 @@ def profile_payload(data):
         "interests": str(data.get("interests", "")).strip(),
         "skills": str(data.get("skills", "")).strip(),
         "advice_topics": str(data.get("advice_topics", "")).strip(),
-        "willing_to_advise": 1
-        if data.get("willing_to_advise", True)
-        else 0,
+        "willing_to_advise": bool(data.get("willing_to_advise", True)),
     }
 
 
 def replace_courses(db, table_name, student_id, courses):
-    db.execute(f"DELETE FROM {table_name} WHERE student_id = ?", (student_id,))
+    db.execute(f"DELETE FROM {table_name} WHERE student_id = %s", (student_id,))
 
     for course in courses:
         db.execute(
             f"""
             INSERT INTO {table_name}
             (student_id, course_code)
-            VALUES (?, ?)
+            VALUES (%s, %s)
             """,
             (student_id, course),
         )
@@ -112,9 +104,9 @@ def replace_courses(db, table_name, student_id, courses):
 
 def fetch_student(db, student_id):
     student = db.execute("""
-        SELECT *
+        SELECT id, name, program, year, bio, interests, skills, advice_topics, willing_to_advise
         FROM students
-        WHERE id = ?
+        WHERE id = %s
     """, (student_id,)).fetchone()
 
     if student is None:
@@ -123,19 +115,19 @@ def fetch_student(db, student_id):
     completed_courses = db.execute("""
         SELECT course_code
         FROM completed_courses
-        WHERE student_id = ?
+        WHERE student_id = %s
         ORDER BY course_code
     """, (student_id,)).fetchall()
 
     current_courses = db.execute("""
         SELECT course_code
         FROM current_courses
-        WHERE student_id = ?
+        WHERE student_id = %s
         ORDER BY course_code
     """, (student_id,)).fetchall()
 
     profile = dict(student)
-    profile["can_receive_requests"] = bool(db.execute("SELECT 1 FROM accounts WHERE student_id = ?", (student_id,)).fetchone())
+    profile["can_receive_requests"] = bool(db.execute("SELECT 1 FROM accounts WHERE student_id = %s", (student_id,)).fetchone())
     profile["completed_courses"] = [
         row["course_code"] for row in completed_courses
     ]
@@ -148,145 +140,22 @@ def fetch_student(db, student_id):
 
 
 def initialize_database():
+    # Migrations are explicit. Startup never creates or falls back to a local DB.
     with get_db() as db:
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS students (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                program TEXT NOT NULL,
-                year TEXT NOT NULL,
-                bio TEXT,
-                interests TEXT,
-                willing_to_advise INTEGER NOT NULL DEFAULT 1
-            )
-        """)
-
-        ensure_student_columns(db)
-
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS accounts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL UNIQUE,
-                email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (student_id) REFERENCES students(id)
-            )
-        """)
-
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS completed_courses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
-                course_code TEXT NOT NULL,
-                FOREIGN KEY (student_id) REFERENCES students(id)
-            )
-        """)
-
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS current_courses (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER NOT NULL,
-                course_code TEXT NOT NULL,
-                FOREIGN KEY (student_id) REFERENCES students(id)
-            )
-        """)
-
-        db.execute("""
-            CREATE TABLE IF NOT EXISTS messages (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                recipient_id INTEGER NOT NULL,
-                sender_name TEXT NOT NULL,
-                body TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (recipient_id) REFERENCES students(id)
-            )
-        """)
-
+        db.execute("SELECT student_id, email, password_hash FROM accounts LIMIT 0")
         initialize_messaging(db)
-
-        count = db.execute(
-            "SELECT COUNT(*) FROM students"
-        ).fetchone()[0]
-
-        if count == 0:
-            students = [
-                (
-                    "Alex Morgan",
-                    "MS Computer Science",
-                    "Second Year",
-                    "I enjoy helping students prepare for software "
-                    "engineering courses and team projects.",
-                    "Software Engineering, Web Development",
-                    1,
-                    ["CSC 510", "CSC 540"],
-                ),
-                (
-                    "Jordan Lee",
-                    "MS Computer Science",
-                    "First Year",
-                    "Happy to share my experience with course "
-                    "assignments and study strategies.",
-                    "AI, Databases",
-                    1,
-                    ["CSC 510", "CSC 515"],
-                ),
-                (
-                    "Taylor Kim",
-                    "MS Computer Science",
-                    "Second Year",
-                    "Interested in helping peers navigate "
-                    "graduate-level computer science courses.",
-                    "Machine Learning, Databases",
-                    1,
-                    ["CSC 540", "CSC 515"],
-                ),
-                (
-                    "Sam Patel",
-                    "MS Computer Science",
-                    "Second Year",
-                    "I can share tips about software engineering "
-                    "projects and working in teams.",
-                    "Software Engineering, Cloud Computing",
-                    1,
-                    ["CSC 510"],
-                ),
-            ]
-
-            for student in students:
-                name, program, year, bio, interests, willing, courses = student
-
-                cursor = db.execute("""
-                    INSERT INTO students
-                    (name, program, year, bio, interests, skills,
-                     advice_topics, willing_to_advise)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    name,
-                    program,
-                    year,
-                    bio,
-                    interests,
-                    "",
-                    "Workload, Projects, Course Prep",
-                    willing,
-                ))
-
-                student_id = cursor.lastrowid
-
-                for course in courses:
-                    db.execute("""
-                        INSERT INTO completed_courses
-                        (student_id, course_code)
-                        VALUES (?, ?)
-                    """, (student_id, course))
-
-        db.commit()
 
 
 @app.route("/api/health")
 def health():
+    with get_db() as db:
+        db.execute("SELECT id FROM accounts LIMIT 0")
     return jsonify({"status": "ok"})
+
+
+@app.errorhandler(OperationalError)
+def database_unavailable(error):
+    return jsonify({"error": "Database unavailable. Please try again shortly."}), 503
 
 
 DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_hex(32))
@@ -304,7 +173,7 @@ def login():
         return jsonify({"error": "Enter your email and password."}), 400
     with get_db() as db:
         account = db.execute(
-            "SELECT student_id, password_hash FROM accounts WHERE email = ?",
+            "SELECT student_id, password_hash FROM accounts WHERE lower(email) = %s",
             (email.strip().lower(),),
         ).fetchone()
         valid = check_password_hash(
@@ -372,17 +241,17 @@ def register():
         with get_db() as db:
             cursor = db.execute("""
                 INSERT INTO students (name, program, year, bio, interests, willing_to_advise)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
             """, (fields["name"], fields["program"], fields["year"],
-                  fields["bio"], fields["interests"], int(willing)))
-            student_id = cursor.lastrowid
+                  fields["bio"], fields["interests"], willing))
+            student_id = cursor.fetchone()["id"]
             db.execute("""
-                INSERT INTO accounts (student_id, email, password_hash) VALUES (?, ?, ?)
+                INSERT INTO accounts (student_id, email, password_hash) VALUES (%s, %s, %s)
             """, (student_id, email, password_hash))
-            db.executemany("""
-                INSERT INTO completed_courses (student_id, course_code) VALUES (?, ?)
+            db.cursor().executemany("""
+                INSERT INTO completed_courses (student_id, course_code) VALUES (%s, %s)
             """, [(student_id, course) for course in courses])
-    except sqlite3.IntegrityError:
+    except UniqueViolation:
         return jsonify({"error": "An account with this email already exists."}), 409
 
     return jsonify({"student": {"id": student_id, **{key: value for key, value in fields.items()
@@ -392,40 +261,7 @@ def register():
 
 @app.route("/api/students", methods=["POST"])
 def create_student():
-    data = request.get_json(silent=True) or {}
-    payload = profile_payload(data)
-
-    if not payload["name"] or not payload["program"] or not payload["year"]:
-        return jsonify({
-            "error": "Name, program, and year are required."
-        }), 400
-
-    completed_courses = normalize_courses(data.get("completed_courses", []))
-    current_courses = normalize_courses(data.get("current_courses", []))
-
-    with get_db() as db:
-        cursor = db.execute("""
-            INSERT INTO students
-            (name, program, year, bio, interests, skills, advice_topics,
-             willing_to_advise)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            payload["name"],
-            payload["program"],
-            payload["year"],
-            payload["bio"],
-            payload["interests"],
-            payload["skills"],
-            payload["advice_topics"],
-            payload["willing_to_advise"],
-        ))
-
-        student_id = cursor.lastrowid
-        replace_courses(db, "completed_courses", student_id, completed_courses)
-        replace_courses(db, "current_courses", student_id, current_courses)
-        student = fetch_student(db, student_id)
-
-    return jsonify({"student": student}), 201
+    return jsonify({"error": "Create your profile through account registration."}), 410
 
 
 @app.route("/api/students/search")
@@ -449,13 +285,13 @@ def search_students():
                 SELECT 1
                 FROM completed_courses c
                 WHERE c.student_id = s.id
-                  AND UPPER(c.course_code) = ?
+                  AND UPPER(c.course_code) = %s
             )
         """)
         parameters.append(course)
 
     if available != "false":
-        conditions.append("s.willing_to_advise = 1")
+        conditions.append("s.willing_to_advise = true")
 
     for column, value in (
         ("s.program", program),
@@ -464,7 +300,7 @@ def search_students():
         ("s.advice_topics", advice_topics),
     ):
         if value:
-            conditions.append(f"LOWER(COALESCE({column}, '')) LIKE ?")
+            conditions.append(f"LOWER(COALESCE({column}, '')) LIKE %s")
             parameters.append(f"%{value.lower()}%")
 
     where_clause = " AND ".join(conditions) if conditions else "1 = 1"
@@ -524,7 +360,7 @@ def update_student(student_id):
         existing_student = db.execute("""
             SELECT id
             FROM students
-            WHERE id = ?
+            WHERE id = %s
         """, (student_id,)).fetchone()
 
         if existing_student is None:
@@ -532,15 +368,15 @@ def update_student(student_id):
 
         db.execute("""
             UPDATE students
-            SET name = ?,
-                program = ?,
-                year = ?,
-                bio = ?,
-                interests = ?,
-                skills = ?,
-                advice_topics = ?,
-                willing_to_advise = ?
-            WHERE id = ?
+            SET name = %s,
+                program = %s,
+                year = %s,
+                bio = %s,
+                interests = %s,
+                skills = %s,
+                advice_topics = %s,
+                willing_to_advise = %s
+            WHERE id = %s
         """, (
             payload["name"],
             payload["program"],

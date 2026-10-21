@@ -1,26 +1,18 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 from werkzeug.security import check_password_hash
 import app as portal
+from postgres_test_support import PostgresTestCase
 
 
-class RegistrationTests(unittest.TestCase):
+class RegistrationTests(PostgresTestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.original_path = portal.DB_PATH
-        portal.DB_PATH = Path(self.directory.name) / "test.db"
-        portal.initialize_database()
+        super().setUp()
         self.client = portal.app.test_client()
         self.payload = dict(name=" Casey Smith ", email=" Casey@Example.edu ",
                             password="a long test password", program="MS Computer Science",
                             year="First Year", willing_to_advise=True,
                             completed_courses=[" csc 510 ", "CSC 510", "CSC 540"])
-
-    def tearDown(self):
-        portal.DB_PATH = self.original_path
-        self.directory.cleanup()
 
     def test_registration_creates_searchable_profile_and_hashes_password(self):
         response = self.client.post("/api/auth/register", json=self.payload)
@@ -36,7 +28,7 @@ class RegistrationTests(unittest.TestCase):
         results = self.client.get("/api/students/search?course=CSC%20510").get_json()["students"]
         self.assertIn(student["id"], [row["id"] for row in results])
         profile = self.client.get(f"/api/students/{student['id']}").get_json()["student"]
-        for private_field in ["email", "password", "password_hash"]:
+        for private_field in ["email", "password", "password_hash", "auth_user_id"]:
             self.assertNotIn(private_field, student)
             self.assertNotIn(private_field, profile)
 
@@ -46,9 +38,9 @@ class RegistrationTests(unittest.TestCase):
         response = self.client.post("/api/auth/register", json=self.payload)
         self.assertEqual(response.status_code, 409)
         with portal.get_db() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 1)
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM students").fetchone()[0], 5)
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM completed_courses WHERE student_id > 4").fetchone()[0], 2)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()["count"], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM students").fetchone()["count"], 5)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM completed_courses WHERE student_id > 4").fetchone()["count"], 2)
 
     def test_invalid_registration_does_not_create_records(self):
         invalid = [None, [], {}, *[{**self.payload, key: value} for key, value in [
@@ -63,8 +55,8 @@ class RegistrationTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 self.assertEqual(self.client.post("/api/auth/register", json=payload).status_code, 400)
         with portal.get_db() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 0)
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM students").fetchone()[0], 4)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()["count"], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM students").fetchone()["count"], 4)
 
     def test_advising_is_opt_in_and_database_initialization_preserves_accounts(self):
         self.payload.pop("willing_to_advise")
@@ -74,7 +66,7 @@ class RegistrationTests(unittest.TestCase):
         results = self.client.get("/api/students/search?course=CSC%20510").get_json()["students"]
         self.assertNotIn(student_id, [row["id"] for row in results])
         with portal.get_db() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()[0], 1)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM accounts").fetchone()["count"], 1)
 
 
 if __name__ == "__main__":

@@ -1,16 +1,12 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 import app as portal
+from postgres_test_support import PostgresTestCase
 
 
-class AuthenticationTests(unittest.TestCase):
+class AuthenticationTests(PostgresTestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.original_path = portal.DB_PATH
-        portal.DB_PATH = Path(self.directory.name) / "auth.db"
-        portal.initialize_database()
+        super().setUp()
         self.client = portal.app.test_client()
         self.credentials = {"email": "casey@example.edu", "password": "a long test password"}
         response = self.client.post("/api/auth/register", json={
@@ -18,10 +14,6 @@ class AuthenticationTests(unittest.TestCase):
             "year": "First Year",
         })
         self.student_id = response.get_json()["student"]["id"]
-
-    def tearDown(self):
-        portal.DB_PATH = self.original_path
-        self.directory.cleanup()
 
     def test_login_restores_session_and_logout_clears_it(self):
         self.assertEqual(self.client.get("/api/auth/me").status_code, 401)
@@ -64,7 +56,8 @@ class AuthenticationTests(unittest.TestCase):
     def test_deleted_profile_invalidates_session(self):
         self.client.post("/api/auth/login", json=self.credentials)
         with portal.get_db() as db:
-            db.execute("DELETE FROM students WHERE id = ?", (self.student_id,))
+            db.execute("DELETE FROM accounts WHERE student_id = %s", (self.student_id,))
+            db.execute("DELETE FROM students WHERE id = %s", (self.student_id,))
         self.assertEqual(self.client.get("/api/auth/me").status_code, 401)
 
 

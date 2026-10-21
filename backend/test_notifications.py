@@ -1,26 +1,22 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 import app as portal
+from postgres_test_support import PostgresTestCase
 
 
-class NotificationTests(unittest.TestCase):
+class NotificationTests(PostgresTestCase):
     @classmethod
     def setUpClass(cls):
         cls.password_hash = portal.generate_password_hash("a long test password")
 
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.original_path = portal.DB_PATH
-        portal.DB_PATH = Path(self.directory.name) / "notifications.db"
-        portal.initialize_database()
+        super().setUp()
         self.ids = []
         self.clients = []
         with portal.get_db() as db:
             for name in ("Sender", "Recipient", "Outsider"):
-                student_id = db.execute("INSERT INTO students (name, program, year, willing_to_advise) VALUES (?, 'CS', 'First Year', 1)", (name,)).lastrowid
-                db.execute("INSERT INTO accounts (student_id, email, password_hash) VALUES (?, ?, ?)",
+                student_id = db.execute("INSERT INTO students (name, program, year, willing_to_advise) VALUES (%s, 'CS', 'First Year', true) RETURNING id", (name,)).fetchone()["id"]
+                db.execute("INSERT INTO accounts (student_id, email, password_hash) VALUES (%s, %s, %s)",
                            (student_id, name.lower() + "@example.edu", self.password_hash))
                 self.ids.append(student_id)
                 client = portal.app.test_client()
@@ -28,10 +24,6 @@ class NotificationTests(unittest.TestCase):
                     session["student_id"] = student_id
                 self.clients.append(client)
         self.sender, self.recipient, self.outsider = self.clients
-
-    def tearDown(self):
-        portal.DB_PATH = self.original_path
-        self.directory.cleanup()
 
     def request(self):
         response = self.sender.post("/api/requests", json={"recipient_id": self.ids[1], "course_code": "CSC 510", "advice_topic": "Projects", "message": "Private context"})
@@ -122,7 +114,7 @@ class NotificationTests(unittest.TestCase):
     def test_feed_is_bounded_but_count_includes_older_unread(self):
         request_id = self.request()
         with portal.get_db() as db:
-            db.executemany("INSERT INTO notifications (user_id, actor_id, request_id, kind, event_key) VALUES (?, ?, ?, 'message', ?)",
+            db.cursor().executemany("INSERT INTO notifications (user_id, actor_id, request_id, kind, event_key) VALUES (%s, %s, %s, 'message', %s)",
                            [(self.ids[1], self.ids[0], request_id, f"fixture:{i}") for i in range(55)])
         feed = self.feed(self.recipient)
         self.assertEqual(len(feed["notifications"]), 50)

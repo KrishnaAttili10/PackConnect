@@ -7,7 +7,7 @@
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
-> **Project status:** Early working prototype. The application includes fictional sample students and account registration. Login uses password verification and session cookies. Advice requests persist in SQLite; acceptance unlocks private two-person chat. Course histories remain self-reported.
+> **Project status:** Early working prototype. The application includes account registration and persistent student profiles. Login uses password verification and session cookies. All application data persists in Supabase PostgreSQL; acceptance unlocks private two-person chat. Course histories remain self-reported.
 
 See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, limitations, and outstanding work.
 
@@ -19,7 +19,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Display matching students who opted in to offer advice by default; the availability filter can include other profiles.
 - Send persistent advice requests, view incoming/outgoing requests, and accept or decline as the recipient.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
-- Automatically seed a local SQLite database with sample students on first backend startup.
+- Store accounts, profiles, courses, requests, chat, and notifications in Supabase PostgreSQL.
 - Get in-app bell notifications for incoming requests, request decisions, and new chat messages. Read/unread state is saved per account.
 - Chat privately after acceptance. Both participants can send messages of up to 2,000 characters, and conversations persist across visits. Open chats refresh every three seconds.
 
@@ -29,7 +29,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 | --- | --- |
 | Frontend | React + Vite |
 | Backend | Python + Flask + Flask-CORS |
-| Database | SQLite |
+| Database | Supabase PostgreSQL (Psycopg) |
 | Development environment | PyCharm or any code editor |
 
 ## Project structure
@@ -38,7 +38,8 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 PackConnect/
 ├── backend/
 │   ├── app.py             # Flask API and database initialization
-│   └── peer_advice.db     # Created locally from fictional seeds; not tracked
+│   ├── database.py        # Transactional Supabase PostgreSQL connections
+│   └── migrate.py         # Explicit versioned schema migrations
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx        # Search and student profile UI
@@ -95,9 +96,12 @@ Install backend dependencies:
 python -m pip install -r backend/requirements.txt
 ```
 
-Start Flask:
+Configure `backend/.env` using [the Supabase setup instructions](docs/SUPABASE.md).
+`SUPABASE_DB_URL` must be a PostgreSQL connection string, not the HTTPS API URL.
+Apply migrations, then start Flask:
 
 ```powershell
+python backend/migrate.py
 python backend/app.py
 ```
 
@@ -107,7 +111,7 @@ The backend should report:
 Running on http://127.0.0.1:5000
 ```
 
-On first startup, it creates `backend/peer_advice.db` and inserts fictional sample student records. Leave this terminal running.
+Flask connects to Supabase; it creates no local database or sample profiles. Leave this terminal running.
 
 > **PowerShell note:** If script execution is blocked when activating the virtual environment, you can skip activation and run `.\.venv\Scripts\python.exe -m pip install -r backend/requirements.txt` followed by `.\.venv\Scripts\python.exe backend/app.py`.
 
@@ -134,7 +138,7 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 ### 4. Try the application
 
 1. Search for `CSC 510`.
-2. The seeded database should return **Alex Morgan, Jordan Lee, and Sam Patel**.
+2. Results depend on registered advisors in your Supabase project. Create an advisor account with `CSC 510` in its completed courses to try the search.
 3. Click **View Profile** to see a student's details.
 4. Try `CSC 540` or `CSC 515` for other matches.
 5. To try requests and chat, create two accounts, opt the recipient into advising, and sign into them in separate browser profiles or a normal/incognito window. Send a request from a registered student profile. Accept it in the recipient's **Requests ? Incoming** tab, then open chat from either account. Seed profiles have no accounts and cannot receive requests.
@@ -159,7 +163,7 @@ Quick browser checks:
 
 ### Account registration
 
-Restart the backend after updating to create the accounts table in your existing database. Click **Create account** in the frontend header. Enter your name, email, a password of 12–128 characters, program, and year. Optional fields include bio, interests, and comma-separated completed courses. Opt in to advising to appear in searches for those courses.
+Apply migrations with `python backend/migrate.py`, then restart the backend. Click **Create account** in the frontend header. Enter your name, email, a password of 12–128 characters, program, and year. Optional fields include bio, interests, and comma-separated completed courses. Opt in to advising to appear in searches for those courses.
 
 The registration API accepts `name`, `email`, `password`, `program`, and `year`, plus optional `bio`, `interests`, `completed_courses` (an array of course codes), and `willing_to_advise` (a boolean, defaulting to false). Email uniqueness ignores case. Account and profile creation are transactional. After registration, sign in on the login page. Email verification is not yet implemented. Course completion is self-reported.
 
@@ -168,10 +172,10 @@ The registration API accepts `name`, `email`, `password`, `program`, and `year`,
 - The frontend uses same-origin `/api` requests. Vite proxies them to `http://127.0.0.1:5000`; restart Vite after updating its configuration. Production hosting must proxy `/api` to Flask as well.
 - Vite usually runs on port **5173**. If that port is busy, use the URL printed by `npm run dev`.
 - Flask runs in **debug mode** for local development. Do not deploy the development server to production.
-- SQLite is the active storage backend. Runtime databases are ignored and are no longer tracked in this version. Existing clones must follow the backup instructions below before pulling the removal. Historical commits still contain the old database.
+- Supabase PostgreSQL is the only active storage backend. Existing SQLite files are ignored, left untouched, and never opened by the application. They are not imported automatically.
 - The example students are fictional; no real student information is required for the prototype.
 - Requests and chat use the signed-in account identity. Only the two participants can read requests/conversations, and only the recipient can accept or decline. Email/push notifications are not implemented.
-- Run backend messaging checks with `python -m unittest discover -s backend -p "test_*.py"` and frontend checks with `npm run build` and `npm run lint` from `frontend`.
+- Backend checks require a dedicated localhost `TEST_DATABASE_URL`; see [verification instructions](docs/SUPABASE.md). Run frontend checks with `npm run build` and `npm run lint` from `frontend`.
 
 ## Common troubleshooting
 
@@ -221,7 +225,7 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 ## Planned improvements
 
-- Authenticated permissions for the remaining profile-creation and messaging endpoints.
+- Password reset, email verification, and login rate limiting.
 - Course completion reporting and richer course discovery.
 - Message read receipts, notifications, and conversation management.
 - Improved testing, validation, privacy, and deployment configuration.
@@ -232,44 +236,16 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 ### Supabase connection setup
 
-Install backend dependencies with `python -m pip install -r backend/requirements.txt`.
-To initialize the optional Supabase client, create `backend/.env` with
-`SUPABASE_URL` and `SUPABASE_SECRET_KEY` from your Supabase project. Keep this file
-local; it is ignored by Git. Both values must be set together. With neither set,
-the application runs locally without a Supabase client.
+Set `SUPABASE_DB_URL` in `backend/.env` to the PostgreSQL **Session pooler**
+connection string from Supabase's Connect panel, including the database password.
+Run `python backend/migrate.py` before starting Flask. `SUPABASE_URL` and
+`SUPABASE_SECRET_KEY` configure the optional SDK used by live integration tests;
+they are separate from the database connection string.
 
-The client is available as `supabase` in `backend/app.py`. API routes currently
-store data in SQLite; this connection setup does not migrate data or switch
-those routes to Supabase.
-
-See [Supabase schema and verification](docs/SUPABASE.md) for the versioned SQL
-baseline, application instructions, and opt-in live read/write test.
-
-### Existing clones: back up before pulling the database removal
-
-Stop the Flask backend before making a file backup. From the repository root:
-
-```powershell
-$databaseBackupDir = Join-Path $env:TEMP ("PackConnect-db-" + [guid]::NewGuid().ToString())
-New-Item -ItemType Directory -Path $databaseBackupDir | Out-Null
-Copy-Item -LiteralPath backend/peer_advice.db -Destination (Join-Path $databaseBackupDir "peer_advice.db")
-Write-Output "Database backup: $databaseBackupDir"
-```
-
-Keep the printed backup path. Pulling or switching to a commit that removes the
-tracked database can delete that file from an existing checkout. After updating,
-restore the backup to `backend/peer_advice.db` if you want your previous local data.
-Do not add the restored file to Git.
-
-For a fresh clone, no database download is needed. Running
-`.\.venv\Scripts\python.exe backend/app.py` creates the SQLite database and four
-fictional student profiles. It creates no accounts or messages. Run
-`git ls-files '*.db'` to confirm no database is tracked, and
-`git check-ignore backend/peer_advice.db` to confirm the ignore rule applies.
-
-This change stops future database tracking; it does not remove historical
-copies. The team must record its decision about historical data in the cleanup
-issue before closing it. Shared Git history has not been rewritten.
+All routes use Supabase PostgreSQL. There is no SQLite fallback and no automatic
+sample seeding or local-data import. Existing `.db` files are left untouched as
+unused backups. Keep credentials out of Git and the frontend. See
+[Supabase setup, migrations, and verification](docs/SUPABASE.md).
 
 ### Automated checks
 
@@ -291,8 +267,8 @@ Refresh restores a valid session; Sign out clears it. For stable sessions across
 backend restarts, set `FLASK_SECRET_KEY` to a strong private value in `backend/.env`.
 Without it, development uses a fresh random key per process. Use HTTPS and set
 `COOKIE_SECURE=true` when deploying. The login gate controls frontend navigation;
-Profile updates require the signed-in owner. Standalone profile creation still
-needs additional permissions. Chat and advice requests require authentication
+Profile updates require the signed-in owner. Standalone profile creation is
+retired (410); registration creates the account and its profile transactionally. Chat and advice requests require authentication
 and participant access. Password reset, email verification, and login rate
 limiting are not implemented in this change.
 
@@ -312,7 +288,7 @@ Permission failures do not modify profile or course records.
 
 ### Persistent requests and private chat
 
-Restart Flask after updating to create the new tables automatically. Existing
+Apply migrations before restarting Flask. Existing Supabase
 profiles, accounts, and legacy messages are retained. Old unauthenticated
 messages are not imported into private conversations because they lack verified
 sender identities. The previous `/api/students/<id>/messages` endpoint now
@@ -340,7 +316,7 @@ notification, preserving newer arrivals. Read state persists across visits.
 
 Notifications refresh every five seconds while the app is open. No browser
 permission is needed; these are in-app alerts, not email or operating-system
-push notifications. Restart Flask after updating to create notification storage.
+push notifications. Apply migrations before restarting Flask to prepare notification storage.
 Existing pending requests and completed decisions are backfilled once without
 resetting previously read updates. The panel shows the latest 50 events; the
 badge counts all unread events. Chat message content is not included in the

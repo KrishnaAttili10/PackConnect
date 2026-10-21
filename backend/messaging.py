@@ -1,54 +1,23 @@
 """Persistent advice requests and participant-only conversations."""
 
-import sqlite3
+from psycopg.errors import UniqueViolation
 from functools import wraps
 
 from flask import Blueprint, jsonify, request, session
 
 
 def initialize_messaging(db):
-    db.executescript("""
-        CREATE TABLE IF NOT EXISTS advice_requests (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sender_id INTEGER NOT NULL REFERENCES students(id),
-            recipient_id INTEGER NOT NULL REFERENCES students(id),
-            course_code TEXT NOT NULL,
-            advice_topic TEXT NOT NULL,
-            message TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'pending'
-                CHECK(status IN ('pending', 'accepted', 'declined')),
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            CHECK(sender_id != recipient_id)
-        );
-        CREATE UNIQUE INDEX IF NOT EXISTS active_advice_pair
-        ON advice_requests(min(sender_id, recipient_id), max(sender_id, recipient_id))
-        WHERE status IN ('pending', 'accepted');
-        CREATE TABLE IF NOT EXISTS chat_messages (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            request_id INTEGER NOT NULL REFERENCES advice_requests(id),
-            sender_id INTEGER NOT NULL REFERENCES students(id),
-            body TEXT NOT NULL,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS chat_request_cursor
-        ON chat_messages(request_id, id);
-        CREATE TABLE IF NOT EXISTS notifications (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL REFERENCES students(id),
-            actor_id INTEGER NOT NULL REFERENCES students(id),
-            request_id INTEGER NOT NULL REFERENCES advice_requests(id),
-            kind TEXT NOT NULL CHECK(kind IN ('request_received', 'accepted', 'declined', 'message')),
-            event_key TEXT NOT NULL UNIQUE,
-            read_at TEXT,
-            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE INDEX IF NOT EXISTS notification_inbox ON notifications(user_id, id);
-        INSERT OR IGNORE INTO notifications (user_id, actor_id, request_id, kind, event_key)
+    db.execute("""
+        INSERT INTO notifications (user_id, actor_id, request_id, kind, event_key)
         SELECT recipient_id, sender_id, id, 'request_received', 'request:' || id
-        FROM advice_requests WHERE status = 'pending';
-        INSERT OR IGNORE INTO notifications (user_id, actor_id, request_id, kind, event_key)
+        FROM advice_requests WHERE status = 'pending'
+        ON CONFLICT (event_key) DO NOTHING
+    """)
+    db.execute("""
+        INSERT INTO notifications (user_id, actor_id, request_id, kind, event_key)
         SELECT sender_id, recipient_id, id, status, 'decision:' || id
-        FROM advice_requests WHERE status IN ('accepted', 'declined');
+        FROM advice_requests WHERE status IN ('accepted', 'declined')
+        ON CONFLICT (event_key) DO NOTHING
     """)
 
 
@@ -60,7 +29,7 @@ def create_messaging_blueprint(get_db):
         def wrapped(*args, **kwargs):
             with get_db() as db:
                 account = db.execute(
-                    "SELECT student_id FROM accounts WHERE student_id = ?",
+                    "SELECT student_id FROM accounts WHERE student_id = %s",
                     (session.get("student_id"),),
                 ).fetchone()
             if account is None:
@@ -74,7 +43,7 @@ def create_messaging_blueprint(get_db):
             FROM advice_requests r
             JOIN students s ON s.id = r.sender_id
             JOIN students t ON t.id = r.recipient_id
-            WHERE r.id = ? AND (r.sender_id = ? OR r.recipient_id = ?)
+            WHERE r.id = %s AND (r.sender_id = %s OR r.recipient_id = %s)
         """, (request_id, session["student_id"], session["student_id"])).fetchone()
         return dict(row) if row else None
 
@@ -87,7 +56,7 @@ def create_messaging_blueprint(get_db):
                 FROM advice_requests r
                 JOIN students s ON s.id = r.sender_id
                 JOIN students t ON t.id = r.recipient_id
-                WHERE r.sender_id = ? OR r.recipient_id = ?
+                WHERE r.sender_id = %s OR r.recipient_id = %s
                 ORDER BY r.id DESC
             """, (session["student_id"], session["student_id"])).fetchall()
         return jsonify({"requests": [dict(row) for row in rows]})
@@ -114,7 +83,7 @@ def create_messaging_blueprint(get_db):
             with get_db() as db:
                 recipient = db.execute("""
                     SELECT s.willing_to_advise, a.id AS account_id FROM students s
-                    LEFT JOIN accounts a ON a.student_id = s.id WHERE s.id = ?
+                    LEFT JOIN accounts a ON a.student_id = s.id WHERE s.id = %s
                 """, (recipient_id,)).fetchone()
                 if recipient is None:
                     return jsonify({"error": "Student not found."}), 404
@@ -123,15 +92,15 @@ def create_messaging_blueprint(get_db):
                 cursor = db.execute("""
                     INSERT INTO advice_requests
                     (sender_id, recipient_id, course_code, advice_topic, message)
-                    VALUES (?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s) RETURNING id
                 """, (session["student_id"], recipient_id, fields["course_code"],
                       fields["advice_topic"], fields["message"]))
-                result = get_request(db, cursor.lastrowid)
+                result = get_request(db, cursor.fetchone()["id"])
                 db.execute("""
                     INSERT INTO notifications (user_id, actor_id, request_id, kind, event_key)
-                    VALUES (?, ?, ?, 'request_received', ?)
+                    VALUES (%s, %s, %s, 'request_received', %s)
                 """, (recipient_id, session["student_id"], result["id"], f"request:{result['id']}"))
-        except sqlite3.IntegrityError:
+        except UniqueViolation:
             return jsonify({"error": "You already have a pending request or accepted connection with this student. Open Requests to continue."}), 409
         return jsonify({"request": result}), 201
 
@@ -147,15 +116,15 @@ def create_messaging_blueprint(get_db):
                 return jsonify({"error": "Request not found."}), 404
             if record["recipient_id"] != session["student_id"]:
                 return jsonify({"error": "Only the recipient can respond."}), 403
-            changed = db.execute("UPDATE advice_requests SET status = ? WHERE id = ? AND status = 'pending'",
+            changed = db.execute("UPDATE advice_requests SET status = %s WHERE id = %s AND status = 'pending'",
                                  (data["status"], request_id)).rowcount
             result = get_request(db, request_id)
             if result["status"] != data["status"]:
                 return jsonify({"error": "This request has already been handled."}), 409
             if changed:
                 db.execute("""
-                    INSERT OR IGNORE INTO notifications (user_id, actor_id, request_id, kind, event_key)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO notifications (user_id, actor_id, request_id, kind, event_key)
+                    VALUES (%s, %s, %s, %s, %s) ON CONFLICT (event_key) DO NOTHING
                 """, (record["sender_id"], session["student_id"], request_id,
                       data["status"], f"decision:{request_id}"))
         return jsonify({"request": result})
@@ -174,20 +143,20 @@ def create_messaging_blueprint(get_db):
                 body = data.get("body") if isinstance(data, dict) else None
                 if not isinstance(body, str) or not body.strip() or len(body.strip()) > 2000:
                     return jsonify({"error": "Messages must contain 1–2000 characters."}), 400
-                cursor = db.execute("INSERT INTO chat_messages (request_id, sender_id, body) VALUES (?, ?, ?)",
+                cursor = db.execute("INSERT INTO chat_messages (request_id, sender_id, body) VALUES (%s, %s, %s) RETURNING id",
                                     (request_id, session["student_id"], body.strip()))
-                row = db.execute("SELECT * FROM chat_messages WHERE id = ?", (cursor.lastrowid,)).fetchone()
+                row = db.execute("SELECT * FROM chat_messages WHERE id = %s", (cursor.fetchone()["id"],)).fetchone()
                 peer_id = record["recipient_id"] if record["sender_id"] == session["student_id"] else record["sender_id"]
                 db.execute("""
                     INSERT INTO notifications (user_id, actor_id, request_id, kind, event_key)
-                    VALUES (?, ?, ?, 'message', ?)
+                    VALUES (%s, %s, %s, 'message', %s)
                 """, (peer_id, session["student_id"], request_id, f"message:{row['id']}"))
                 return jsonify({"message": dict(row)}), 201
             after_id = request.args.get("after_id", "0")
             if not after_id.isascii() or not after_id.isdigit() or len(after_id) > 18:
                 return jsonify({"error": "Invalid message cursor."}), 400
             rows = db.execute("""
-                SELECT * FROM chat_messages WHERE request_id = ? AND id > ?
+                SELECT * FROM chat_messages WHERE request_id = %s AND id > %s
                 ORDER BY id LIMIT 101
             """, (request_id, int(after_id))).fetchall()
         return jsonify({"request": record, "messages": [dict(row) for row in rows[:100]], "has_more": len(rows) > 100})
@@ -202,10 +171,10 @@ def create_messaging_blueprint(get_db):
                 FROM notifications n
                 LEFT JOIN students s ON s.id = n.actor_id
                 JOIN advice_requests r ON r.id = n.request_id
-                WHERE n.user_id = ? ORDER BY n.id DESC LIMIT 50
+                WHERE n.user_id = %s ORDER BY n.id DESC LIMIT 50
             """, (session["student_id"],)).fetchall()
-            unread = db.execute("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND read_at IS NULL",
-                                (session["student_id"],)).fetchone()[0]
+            unread = db.execute("SELECT COUNT(*) FROM notifications WHERE user_id = %s AND read_at IS NULL",
+                                (session["student_id"],)).fetchone()["count"]
         return jsonify({"notifications": [dict(row) for row in rows], "unread_count": unread})
 
     @api.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
@@ -214,7 +183,7 @@ def create_messaging_blueprint(get_db):
         with get_db() as db:
             changed = db.execute("""
                 UPDATE notifications SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
-                WHERE id = ? AND user_id = ?
+                WHERE id = %s AND user_id = %s
             """, (notification_id, session["student_id"])).rowcount
             if not changed:
                 return jsonify({"error": "Notification not found."}), 404
@@ -230,7 +199,7 @@ def create_messaging_blueprint(get_db):
         with get_db() as db:
             db.execute("""
                 UPDATE notifications SET read_at = CURRENT_TIMESTAMP
-                WHERE user_id = ? AND read_at IS NULL AND id <= ?
+                WHERE user_id = %s AND read_at IS NULL AND id <= %s
             """, (session["student_id"], through_id))
         return jsonify({"status": "ok"})
 

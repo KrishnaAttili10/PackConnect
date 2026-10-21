@@ -1,16 +1,13 @@
-import tempfile
 import unittest
-from pathlib import Path
+from datetime import datetime
 
 import app as portal
+from postgres_test_support import PostgresTestCase
 
 
-class MessagingTests(unittest.TestCase):
+class MessagingTests(PostgresTestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.original_path = portal.DB_PATH
-        portal.DB_PATH = Path(self.directory.name) / "messages.db"
-        portal.initialize_database()
+        super().setUp()
         self.clients = []
         self.ids = []
         for name in ("Sender", "Recipient", "Outsider"):
@@ -26,10 +23,6 @@ class MessagingTests(unittest.TestCase):
         self.sender, self.recipient, self.outsider = self.clients
         self.payload = {"recipient_id": self.ids[1], "course_code": " csc 510 ",
                         "advice_topic": " Projects ", "message": " Any preparation tips? "}
-
-    def tearDown(self):
-        portal.DB_PATH = self.original_path
-        self.directory.cleanup()
 
     def create_request(self):
         response = self.sender.post("/api/requests", json=self.payload)
@@ -86,7 +79,7 @@ class MessagingTests(unittest.TestCase):
 
     def test_unavailable_recipient(self):
         with portal.get_db() as db:
-            db.execute("UPDATE students SET willing_to_advise = 0 WHERE id = ?", (self.ids[1],))
+            db.execute("UPDATE students SET willing_to_advise = false WHERE id = %s", (self.ids[1],))
         self.assertEqual(self.sender.post("/api/requests", json=self.payload).status_code, 400)
 
     def test_duplicate_and_reverse_pending_requests_are_rejected(self):
@@ -134,6 +127,7 @@ class MessagingTests(unittest.TestCase):
             response = client.post(f"/api/requests/{request_id}/messages", json={"body": body, "sender_id": self.ids[2]})
             self.assertEqual(response.status_code, 201)
             self.assertEqual(response.get_json()["message"]["sender_id"], sender_id)
+            self.assertIsNotNone(datetime.fromisoformat(response.get_json()["message"]["created_at"]).tzinfo)
         portal.initialize_database()
         messages = self.sender.get(f"/api/requests/{request_id}/messages").get_json()["messages"]
         self.assertEqual([row["body"] for row in messages], ["Hi there", "Happy to help"])
@@ -154,7 +148,7 @@ class MessagingTests(unittest.TestCase):
     def test_message_cursor_pages_without_gaps(self):
         request_id = self.accept()
         with portal.get_db() as db:
-            db.executemany("INSERT INTO chat_messages (request_id, sender_id, body) VALUES (?, ?, ?)", [(request_id, self.ids[0], str(i)) for i in range(105)])
+            db.cursor().executemany("INSERT INTO chat_messages (request_id, sender_id, body) VALUES (%s, %s, %s)", [(request_id, self.ids[0], str(i)) for i in range(105)])
         first = self.sender.get(f"/api/requests/{request_id}/messages").get_json()
         self.assertEqual(len(first["messages"]), 100)
         self.assertTrue(first["has_more"])
@@ -169,14 +163,14 @@ class MessagingTests(unittest.TestCase):
     def test_old_direct_message_route_cannot_bypass_acceptance(self):
         self.assertEqual(self.sender.post("/api/students/1/messages", json={"body": "Bypass"}).status_code, 410)
         with portal.get_db() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM messages").fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM messages").fetchone()["count"], 0)
 
     def test_existing_legacy_messages_are_preserved_without_exposure(self):
         with portal.get_db() as db:
             db.execute("INSERT INTO messages (recipient_id, sender_name, body) VALUES (1, 'Legacy', 'Old data')")
         portal.initialize_database()
         with portal.get_db() as db:
-            self.assertEqual(db.execute("SELECT body FROM messages").fetchone()[0], "Old data")
+            self.assertEqual(db.execute("SELECT body AS count FROM messages").fetchone()["count"], "Old data")
         self.assertEqual(self.sender.get("/api/requests").get_json()["requests"], [])
 
 

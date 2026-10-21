@@ -14,17 +14,20 @@ once the workflow exists on the default branch.
 Each job has a ten-minute timeout. Installation, test, lint, or build failures
 fail the corresponding job and workflow; failures are not suppressed.
 
-The backend tests use temporary SQLite databases. No running API server, local
-database, `.env` file, Supabase credentials, or GitHub repository secrets are
-required. CI leaves the optional Supabase variables empty. It installs the
-Supabase SDK because the application imports it, but makes no live service calls.
+The backend tests run in temporary schemas on a PostgreSQL 17 service. CI sets
+`TEST_DATABASE_URL` to that local service and keeps live Supabase settings empty.
+No live Supabase credentials or GitHub repository secrets are required. The
+schema fixtures supply the minimal Supabase roles and Auth reference table.
+Live integration tests are skipped unless explicitly enabled.
 
 Dependency download caches are keyed by the backend requirements or frontend
 lockfile; frontend packages are installed with `npm ci` from the lockfile.
 
 ## Local verification
 
-From the repository root after installing dependencies:
+From the repository root after installing dependencies and setting
+`TEST_DATABASE_URL` to a dedicated localhost PostgreSQL database (see
+[database verification](SUPABASE.md)):
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s backend -p "test_*.py" -v

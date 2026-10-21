@@ -1,72 +1,81 @@
-# Supabase schema and connection verification
+# Supabase storage
 
-Flask initializes a server-only Supabase client from `backend/.env`. Application
-routes still use SQLite. This step adds a PostgreSQL schema baseline and a live
-test; it does not switch route storage, migrate existing data, or change login.
+All Flask routes use PostgreSQL hosted by Supabase through Psycopg. Registration,
+login accounts, profiles, courses, requests, chat, and notifications share this
+database. There is no SQLite runtime or fallback. Flask session authentication
+is retained; accounts are not automatically converted to Supabase Auth users.
 
-## Schema baseline
+## Configure and apply migrations
 
-`supabase/migrations/20261021000100_packconnect_schema.sql` creates profiles,
-Flask accounts, completed/current courses, legacy messages, advice requests,
-chat messages, and notifications. IDs accept explicit values for a later SQLite
-import. After importing explicit IDs, reset identity sequences above imported
-maximum IDs before accepting new writes.
+Install `backend/requirements.txt`, then create `backend/.env` using
+`backend/.env.example`. Set `SUPABASE_DB_URL` to the project's **Connect → Session
+pooler** PostgreSQL connection string, including the database password. This is
+separate from the HTTPS `SUPABASE_URL` and from API keys. Percent-encode special
+characters in a URL password. SSL is required by default. Keep all credentials
+server-side and out of Git.
 
-The baseline retains the existing project's optional `students.auth_user_id`
-and legacy `messages.sender_user_id` fields. Supabase Auth and Flask accounts
-remain separate; no accounts or password hashes are converted automatically.
-PostgreSQL stores availability as a boolean and timestamps with time zones.
-
-On an existing project, `CREATE TABLE IF NOT EXISTS` preserves existing tables
-and data; it does not reconcile differing column definitions or constraints.
-Review existing schema before applying. Unique-index creation deliberately fails
-and rolls back if existing rows violate uniqueness; it never deletes conflicts.
-All tables must have an identity/serial `id` sequence.
-
-RLS is enabled, browser-role grants are revoked, and the server `service_role`
-gets data access. Existing browser-based Supabase clients would lose table access.
-Flask must continue checking sessions, ownership, and conversation membership:
-the server secret bypasses RLS. Never put it in frontend environment variables.
-
-## Apply
-
-API keys permit data operations, not arbitrary schema migrations. To apply with
-the Supabase CLI, authenticate, initialize CLI configuration if needed, link the
-intended project, inspect pending migrations, then push:
+From the repository root:
 
 ```sh
-supabase init
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push --dry-run
-supabase db push
+.venv/bin/python backend/migrate.py
+.venv/bin/python backend/app.py
 ```
 
-For a project already managed with migrations, reconcile the remote migration
-history first. Alternatively, run the migration SQL in the project's SQL Editor;
-record that manual application before using CLI migrations later. Do not use
-`db reset` against the connected project.
+On Windows use `.\.venv\Scripts\python.exe` in place of `.venv/bin/python`.
+The migration runner holds a database advisory lock and applies pending SQL files
+and their checksums in one transaction. It tracks them in
+`public.packconnect_migrations`; rerunning skips unchanged applied files and
+rejects changed ones. Do not mix this runner's history with Supabase CLI history
+without reconciling them. A failed migration rolls back the entire run.
 
-## Verify read/write access
+The baseline preserves existing tables and rows with `CREATE TABLE IF NOT EXISTS`.
+It adds the Flask `accounts` table if missing and enforces case-insensitive email
+uniqueness. A follow-up migration permits legacy messages without a Supabase Auth
+UUID and backfills request notifications. Existing tables must have compatible
+columns and identity/serial ID sequences; the baseline does not repair arbitrary
+schema differences. Conflicting unique indexes fail rather than deleting rows.
 
-From the repository root, with backend dependencies installed:
+RLS is enabled and browser-role table grants are revoked. Flask owns authorization
+and uses a privileged server database connection. Existing browser clients that
+query Supabase tables directly would lose access. The frontend continues to use
+Flask `/api` endpoints. No frontend credentials are needed for application storage.
+
+Startup checks account storage and backfills notifications; it does not create
+schema or seed fictional students. An old `backend/peer_advice.db` can remain as
+an unused backup. It is never opened by the app. Local SQLite data is not
+imported automatically; preserve old files before any separate data transfer.
+Supabase Auth UUIDs are omitted from public profile responses.
+
+## Verification
+
+Backend tests use isolated schemas on a dedicated local PostgreSQL database,
+not your connected project. Set `TEST_DATABASE_URL` to a localhost database with
+schema/role creation privileges and `sslmode=disable` for local testing. CI
+provides a PostgreSQL 17 service automatically.
+
+```sh
+TEST_DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/packconnect_test?sslmode=disable' \
+  .venv/bin/python -m unittest discover -s backend -p 'test_*.py' -v
+```
+
+The normal suite covers authentication, privacy, transactions and rollback,
+foreign keys, permissions, request decisions, chat persistence, notifications,
+repeatable migrations, and denied browser-role table privileges.
+
+To explicitly test the connected Supabase project after migration:
 
 ```sh
 RUN_SUPABASE_INTEGRATION=1 .venv/bin/python -m unittest discover -s backend -p 'test_supabase_integration.py' -v
 ```
 
-The test uses Flask's configured Supabase client to create two temporary profiles,
-write/read course records, create and accept an advice request, persist a chat
-message, and mark a notification read. Cleanup deletes only those inserted IDs
-in reverse dependency order, including after assertion failures. An interrupted
-process or a network failure during cleanup can leave records whose names start
-with `integration-`; inspect them before removing them manually. Identity
-sequences advance even when temporary records are deleted.
+The integration suite exercises the actual Flask routes for registration, login,
+profile editing, search, requests, acceptance, private chat, notifications, and
+third-party denial, then checks API writes through a separate SQL connection.
+It also verifies the optional Supabase SDK with `SUPABASE_URL` and
+`SUPABASE_SECRET_KEY` configured. Cleanup removes only the newly inserted IDs in
+reverse dependency order. Network failures or process interruption can leave
+UUID-tagged `integration-` rows; inspect them before manual removal. Sequence
+counters advance even after cleanup.
 
-This test covers the existing connected tables. It does not test legacy messages,
-Flask accounts, browser-role permissions, or Flask API authorization. It can pass
-before the baseline is applied, so success is not proof of migration completion.
-Normal test discovery skips this test unless explicitly enabled.
-
-References: [Supabase migrations](https://supabase.com/docs/guides/deployment/database-migrations),
-[row-level security](https://supabase.com/docs/guides/database/postgres/row-level-security).
+References: [Supabase PostgreSQL connections](https://supabase.com/docs/guides/database/connecting-to-postgres),
+[Psycopg transactions](https://www.psycopg.org/psycopg3/docs/basic/transactions.html).

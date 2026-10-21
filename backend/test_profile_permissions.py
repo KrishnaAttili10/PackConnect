@@ -1,16 +1,12 @@
-import tempfile
 import unittest
-from pathlib import Path
 
 import app as portal
+from postgres_test_support import PostgresTestCase
 
 
-class ProfilePermissionsTests(unittest.TestCase):
+class ProfilePermissionsTests(PostgresTestCase):
     def setUp(self):
-        self.directory = tempfile.TemporaryDirectory()
-        self.original_path = portal.DB_PATH
-        portal.DB_PATH = Path(self.directory.name) / "permissions.db"
-        portal.initialize_database()
+        super().setUp()
         self.client = portal.app.test_client()
         self.credentials = {"email": "owner@example.edu", "password": "a long test password"}
         response = self.client.post("/api/auth/register", json={
@@ -25,15 +21,17 @@ class ProfilePermissionsTests(unittest.TestCase):
             "completed_courses": ["csc 510", "CSC 540"], "current_courses": ["CSC 515"],
         }
 
-    def tearDown(self):
-        portal.DB_PATH = self.original_path
-        self.directory.cleanup()
-
     def test_unauthenticated_update_is_rejected_without_changes(self):
         before = self.client.get(f"/api/students/{self.student_id}").get_json()
         response = self.client.put(f"/api/students/{self.student_id}", json=self.payload)
         self.assertEqual(response.status_code, 401)
         self.assertEqual(before, self.client.get(f"/api/students/{self.student_id}").get_json())
+
+    def test_standalone_profile_creation_is_retired(self):
+        response = self.client.post("/api/students", json=self.payload)
+        self.assertEqual(response.status_code, 410)
+        with portal.get_db() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM students").fetchone()["count"], 5)
 
     def test_other_user_cannot_modify_profile_or_courses(self):
         self.client.post("/api/auth/login", json=self.credentials)
