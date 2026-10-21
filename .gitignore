@@ -5,6 +5,9 @@ __pycache__/
 venv/
 .env
 
+# Local database backups
+.local-backups/
+
 # SQLite
 *.db
 *.sqlite
@@ -16,3 +19,5 @@ dist/
 
 # PyCharm
 .idea/
+# Vite cache
+.vite/

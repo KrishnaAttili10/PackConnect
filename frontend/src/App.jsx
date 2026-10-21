@@ -1,9 +1,11 @@
 
 import { useEffect, useState } from "react";
 import "./App.css";
-import RegistrationForm from "./RegistrationForm";
+import { ConnectionRequestForm, RequestInbox, Conversation } from "./Messaging";
+import { useRequests } from "./useRequests";
+import NotificationBell from "./NotificationBell";
 
-const API_URL = "http://127.0.0.1:5000";
+const API_URL = "";
 
 const emptyProfile = {
   name: "",
@@ -26,14 +28,6 @@ const emptyFilters = {
   availableOnly: true,
 };
 
-const emptyConnectionRequest = {
-  requester_name: "",
-  requester_email: "",
-  course_code: "",
-  advice_topic: "",
-  message: "",
-};
-
 function coursesToText(courses = []) {
   return Array.isArray(courses) ? courses.join(", ") : "";
 }
@@ -45,282 +39,21 @@ function textToCourses(value) {
     .filter(Boolean);
 }
 
-function MessageForm({ student }) {
-  const [senderName, setSenderName] = useState("");
-  const [body, setBody] = useState("");
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  async function sendMessage(event) {
-    event.preventDefault();
-    if (sending) return;
-    setError("");
-    setSuccess("");
-    if (!senderName.trim() || !body.trim()) {
-      setError("Please enter your name and a message.");
-      return;
-    }
-    setSending(true);
-    try {
-      const response = await fetch(`${API_URL}/api/students/${student.id}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sender_name: senderName.trim(), body: body.trim() }),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Unable to send message.");
-      setBody("");
-      setSuccess(`Message to ${student.name} saved successfully.`);
-    } catch (err) {
-      setError(err.message || "Could not send your message. Please try again.");
-    } finally {
-      setSending(false);
-    }
-  }
-
-  return (
-    <form className="message-form" onSubmit={sendMessage}>
-      <h4>Send a message to {student.name}</h4>
-      <p className="profile-note">Prototype: messages are saved locally. Student inboxes are not available yet.</p>
-      <label htmlFor="sender-name">Your name</label>
-      <input id="sender-name" value={senderName} onChange={(event) => { setSenderName(event.target.value); setSuccess(""); }} maxLength={100} required disabled={sending} autoComplete="name" />
-      <label htmlFor="message-body">Message</label>
-      <textarea id="message-body" value={body} onChange={(event) => { setBody(event.target.value); setSuccess(""); }} maxLength={2000} required disabled={sending} rows={5} placeholder="Ask about coursework, study tips, or their experience..." aria-describedby="message-count" />
-      <span id="message-count" className="message-count">{body.length}/2000 characters</span>
-      {error && <p className="error-message" role="alert">{error}</p>}
-      {success && <p className="message-success" role="status">{success}</p>}
-      <button type="submit" disabled={sending || !senderName.trim() || !body.trim()}>{sending ? "Sending..." : "Send Message"}</button>
-    </form>
-  );
-}
-
-function ConnectionRequestForm({ student, defaultCourse, onRequestCreated }) {
-  const [requestForm, setRequestForm] = useState({
-    ...emptyConnectionRequest,
-    course_code: defaultCourse,
-  });
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-
-  function updateRequestField(field, value) {
-    setRequestForm((currentForm) => ({
-      ...currentForm,
-      [field]: value,
-    }));
-  }
-
-  async function submitRequest(event) {
-    event.preventDefault();
-    if (submitting) return;
-
-    setError("");
-    setSuccess("");
-    setSubmitting(true);
-
-    try {
-      const request = {
-        id: crypto.randomUUID(),
-        student_id: student.id,
-        student_name: student.name,
-        requester_name: requestForm.requester_name.trim(),
-        requester_email: requestForm.requester_email.trim(),
-        course_code: requestForm.course_code.trim().toUpperCase(),
-        advice_topic: requestForm.advice_topic.trim(),
-        message: requestForm.message.trim(),
-        status: "pending",
-        created_at: new Date().toISOString(),
-      };
-
-      setSuccess(`Request sent to ${student.name}.`);
-      setRequestForm({
-        ...emptyConnectionRequest,
-        course_code: defaultCourse,
-      });
-      onRequestCreated(request);
-    } catch (err) {
-      setError(err.message || "Could not send the request.");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <form className="request-form" onSubmit={submitRequest}>
-      <h4>Request advice from {student.name}</h4>
-      <p className="profile-note">
-        Send context first. Messaging should happen after the request is accepted.
-      </p>
-
-      <div className="request-grid">
-        <label>
-          Your name
-          <input
-            value={requestForm.requester_name}
-            onChange={(event) =>
-              updateRequestField("requester_name", event.target.value)
-            }
-            maxLength={100}
-            required
-            disabled={submitting}
-          />
-        </label>
-
-        <label>
-          Email
-          <input
-            type="email"
-            value={requestForm.requester_email}
-            onChange={(event) =>
-              updateRequestField("requester_email", event.target.value)
-            }
-            maxLength={160}
-            disabled={submitting}
-          />
-        </label>
-
-        <label>
-          Course
-          <input
-            value={requestForm.course_code}
-            onChange={(event) =>
-              updateRequestField("course_code", event.target.value)
-            }
-            placeholder="CSC 510"
-            maxLength={30}
-            required
-            disabled={submitting}
-          />
-        </label>
-
-        <label>
-          Advice topic
-          <input
-            value={requestForm.advice_topic}
-            onChange={(event) =>
-              updateRequestField("advice_topic", event.target.value)
-            }
-            placeholder="Projects, workload, prep"
-            maxLength={80}
-            required
-            disabled={submitting}
-          />
-        </label>
-
-        <label className="wide-field">
-          Message
-          <textarea
-            value={requestForm.message}
-            onChange={(event) =>
-              updateRequestField("message", event.target.value)
-            }
-            placeholder="Share what you want help with and why this student seems relevant."
-            maxLength={1000}
-            rows={4}
-            required
-            disabled={submitting}
-          />
-        </label>
-      </div>
-
-      {error && <p className="error-message" role="alert">{error}</p>}
-      {success && <p className="message-success" role="status">{success}</p>}
-
-      <button
-        type="submit"
-        disabled={
-          submitting ||
-          !requestForm.requester_name.trim() ||
-          !requestForm.course_code.trim() ||
-          !requestForm.advice_topic.trim() ||
-          !requestForm.message.trim()
-        }
-      >
-        {submitting ? "Sending..." : "Send Request"}
-      </button>
-    </form>
-  );
-}
-
-function RequestReviewPanel({ requests, loading, onStatusChange, onRefresh }) {
-  return (
-    <section className="request-panel">
-      <div className="section-heading">
-        <div>
-          <h3>Advice requests</h3>
-          <p>Frontend-only prototype until requests belong to Supabase accounts.</p>
-        </div>
-        <button type="button" onClick={onRefresh}>
-          Clear handled
-        </button>
-      </div>
-
-      {loading ? (
-        <p className="empty-state">Loading requests...</p>
-      ) : requests.length === 0 ? (
-        <p className="empty-state">No advice requests yet.</p>
-      ) : (
-        <div className="request-list">
-          {requests.map((request) => (
-            <article className="request-card" key={request.id}>
-              <div>
-                <div className="request-card-header">
-                  <strong>{request.requester_name}</strong>
-                  <span className={`status-badge ${request.status}`}>
-                    {request.status}
-                  </span>
-                </div>
-                <p>
-                  wants advice from <strong>{request.student_name}</strong> for{" "}
-                  <strong>{request.course_code}</strong>
-                </p>
-                <p>
-                  <strong>Topic: </strong>
-                  {request.advice_topic}
-                </p>
-                <p>{request.message}</p>
-                {request.requester_email && (
-                  <p className="profile-note">{request.requester_email}</p>
-                )}
-              </div>
-
-              {request.status === "pending" && (
-                <div className="request-actions">
-                  <button
-                    type="button"
-                    onClick={() => onStatusChange(request.id, "accepted")}
-                  >
-                    Accept
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onStatusChange(request.id, "declined")}
-                  >
-                    Decline
-                  </button>
-                </div>
-              )}
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function App() {
-  const [showRegistration, setShowRegistration] = useState(false);
+function App({ user, onLogout, route, onUserUpdated }) {
+  const isSearchPage = route === "app";
+  const profileId = /^app\/students\/[1-9]\d*$/.test(route) ? Number(route.split("/")[2]) : ["app/profile", "app/profile/edit"].includes(route) ? user.id : null;
+  const isEditing = route === "app/profile/edit";
+  const [menuOpen, setMenuOpen] = useState(false);
   const [course, setCourse] = useState("CSC 510");
   const [filters, setFilters] = useState(emptyFilters);
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [profileError, setProfileError] = useState({ route: "", message: "" });
   const [profileForm, setProfileForm] = useState(emptyProfile);
   const [editingStudentId, setEditingStudentId] = useState(null);
-  const [showProfileForm, setShowProfileForm] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [requests, setRequests] = useState([]);
-  const [requestsLoading] = useState(false);
+  const { requests, loading: requestsLoading, error: requestsError, refresh: refreshRequests } = useRequests(route);
+  const chatId = /^app\/chat\/[1-9]\d*$/.test(route) ? Number(route.split("/")[2]) : null;
   const [profileSaving, setProfileSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -388,47 +121,6 @@ function App() {
     }
   }
 
-  async function viewProfile(studentId) {
-    setError("");
-    setNotice("");
-
-    try {
-      const response = await fetch(
-        `${API_URL}/api/students/${studentId}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Unable to load profile.");
-      }
-
-      const data = await response.json();
-      setSelectedStudent(data.student ?? data);
-    } catch {
-      setError("Could not load the student's profile.");
-    }
-  }
-
-  function addConnectionRequest(request) {
-    setRequests((currentRequests) => [request, ...currentRequests]);
-  }
-
-  function updateConnectionRequestStatus(requestId, status) {
-    setError("");
-    setNotice("");
-    setRequests((currentRequests) =>
-      currentRequests.map((request) =>
-        request.id === requestId ? { ...request, status } : request
-      )
-    );
-    setNotice(`Request ${status}.`);
-  }
-
-  function clearHandledRequests() {
-    setRequests((currentRequests) =>
-      currentRequests.filter((request) => request.status === "pending")
-    );
-  }
-
   function updateProfileField(field, value) {
     setProfileForm((currentProfile) => ({
       ...currentProfile,
@@ -474,18 +166,6 @@ function App() {
   }
 
 
-  function startCreateProfile() {
-    setEditingStudentId(null);
-    setProfileForm({
-      ...emptyProfile,
-      completed_courses: course.trim(),
-    });
-    setShowProfileForm(true);
-    setSelectedStudent(null);
-    setError("");
-    setNotice("");
-  }
-
   function startEditProfile(student) {
     setEditingStudentId(student.id);
     setProfileForm({
@@ -502,14 +182,14 @@ function App() {
       current_courses: coursesToText(student.current_courses),
       willing_to_advise: Boolean(student.willing_to_advise),
     });
-    setShowProfileForm(true);
+    window.location.hash = "/app/profile/edit";
     setError("");
     setNotice("");
   }
 
   function closeProfileForm() {
     if (profileSaving) return;
-    setShowProfileForm(false);
+    window.location.hash = "/app/profile";
     setEditingStudentId(null);
     setProfileForm(emptyProfile);
   }
@@ -551,10 +231,11 @@ function App() {
       if (!response.ok) throw new Error(data.error || "Unable to save profile.");
 
       setSelectedStudent(data.student);
-      setShowProfileForm(false);
+      window.location.hash = "/app/profile";
       setEditingStudentId(null);
       setProfileForm(emptyProfile);
-      setNotice(editingStudentId ? "Profile updated." : "Profile created.");
+      setNotice("Profile updated.");
+      onUserUpdated(data.student);
       setStudents((currentStudents) => {
         if (!profileMatchesSearch(data.student, payload.completed_courses)) {
           return currentStudents.filter(
@@ -562,12 +243,7 @@ function App() {
           );
         }
 
-        const summary = {
-          id: data.student.id,
-          name: data.student.name,
-          program: data.student.program,
-          year: data.student.year,
-        };
+        const summary = data.student;
 
         if (currentStudents.some((student) => student.id === summary.id)) {
           return currentStudents.map((student) =>
@@ -607,6 +283,36 @@ function App() {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (!profileId) return;
+    const controller = new AbortController();
+    async function loadProfile() {
+      try {
+        const response = await fetch(`/api/students/${profileId}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(response.status === 404 ? "Student profile not found." : "Could not load this profile.");
+        const { student } = await response.json();
+        if (controller.signal.aborted) return;
+        setSelectedStudent(student);
+        setProfileError({ route, message: "" });
+        setError("");
+        setEditingStudentId(user.id);
+        setProfileForm({
+          ...student,
+          interests: Array.isArray(student.interests) ? student.interests.join(", ") : student.interests || "",
+          skills: student.skills || "", advice_topics: student.advice_topics || "",
+          bio: student.bio || "",
+          completed_courses: coursesToText(student.completed_courses),
+          current_courses: coursesToText(student.current_courses),
+          willing_to_advise: Boolean(student.willing_to_advise),
+        });
+      } catch (err) {
+        if (!controller.signal.aborted) { setSelectedStudent(null); setProfileError({ route, message: err.message }); }
+      }
+    }
+    loadProfile();
+    return () => controller.abort();
+  }, [profileId, user.id, route]);
+
   return (
     <div className="app">
       <header className="header">
@@ -620,14 +326,26 @@ function App() {
           </div>
           <div className="header-actions">
             <span className="university">NC State University</span>
-            <button className="profile-button" aria-expanded={showRegistration} aria-controls="registration" onClick={() => setShowRegistration((shown) => !shown)}>Create account</button>
+            <span className="signed-in-name">{user.name}</span>
+            <NotificationBell route={route} />
+            <button className="profile-button" onClick={onLogout}>Sign out</button>
           </div>
         </div>
       </header>
 
+      <nav className="workspace-nav" aria-label="Main navigation">
+        <button className="menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="workspace-links" onClick={() => setMenuOpen(!menuOpen)}>Menu</button>
+        <div id="workspace-links" className={menuOpen ? "workspace-links open" : "workspace-links"} onClick={() => setMenuOpen(false)}>
+          <a href="#/app" aria-current={isSearchPage ? "page" : undefined}>Find peers</a>
+          <a href="#/app/requests" aria-current={route.startsWith("app/requests") ? "page" : undefined}>Requests {requests.length > 0 && <span>{requests.length}</span>}</a>
+          <a href="#/app/profile" aria-current={route.startsWith("app/profile") ? "page" : undefined}>My profile</a>
+          <a href="#/about">About</a>
+        </div>
+      </nav>
       <main className="main">
-        {showRegistration && <RegistrationForm apiUrl={API_URL} onClose={() => setShowRegistration(false)} onRegistered={() => searchStudents()} />}
-        <section className="hero">
+        {error && <div className="error-message" role="alert">{error}</div>}
+        {notice && <div className="success-message" role="status">{notice}</div>}
+        {isSearchPage && <section className="hero">
           <span className="eyebrow">STUDENT-TO-STUDENT SUPPORT</span>
           <h2>Find someone who's taken your course.</h2>
           <p>
@@ -654,6 +372,7 @@ function App() {
             </button>
           </form>
 
+          <details className="advanced-filters"><summary>Advanced filters</summary>
           <div className="filter-panel" aria-label="Search filters">
             <label>
               Program
@@ -713,30 +432,20 @@ function App() {
             </button>
           </div>
 
+          </details>
+          <div className="filter-chips" aria-label="Active filters">
+            {Object.entries(filters).filter(([key, value]) => key !== "availableOnly" && value.trim()).map(([key, value]) => <button key={key} type="button" onClick={() => { const next = { ...filters, [key]: "" }; setFilters(next); searchStudents(course, next); }}>{key.replaceAll("_", " ")}: {value} (remove)</button>)}
+          </div>
           <p className="search-hint">
             Try searching for CSC 510, CSC 540, or CSC 515.
           </p>
 
-          <button
-            className="secondary-action"
-            type="button"
-            onClick={startCreateProfile}
-          >
-            Create Student Profile
-          </button>
-        </section>
+        </section>}
 
-        {error && <div className="error-message">{error}</div>}
-        {notice && <div className="success-message">{notice}</div>}
+        {["app/requests", "app/requests/outgoing"].includes(route) && <RequestInbox key={route} initialTab={route.endsWith("outgoing") ? "outgoing" : "incoming"} user={user} requests={requests} loading={requestsLoading} error={requestsError} onRefresh={refreshRequests} />}
+        {chatId && <Conversation key={chatId} requestId={chatId} user={user} />}
 
-        <RequestReviewPanel
-          requests={requests}
-          loading={requestsLoading}
-          onStatusChange={updateConnectionRequestStatus}
-          onRefresh={clearHandledRequests}
-        />
-
-        {showProfileForm && (
+        {isEditing && selectedStudent?.id === user.id && (
           <section className="profile-editor">
             <div className="profile-heading">
               <div>
@@ -897,7 +606,7 @@ function App() {
           </section>
         )}
 
-        <section className="results">
+        {isSearchPage && <section className="results">
           <div className="section-heading">
             <div>
               <h3>Students who can help</h3>
@@ -950,25 +659,25 @@ function App() {
                       : "Not currently available"}
                   </span>
 
-                  <button
-                    className="profile-button"
-                    onClick={() => viewProfile(student.id)}
-                  >
+                  <a className="profile-button peer-profile-link" href={`#/app/students/${student.id}`}>
                     View Profile →
-                  </button>
+                  </a>
                 </article>
               ))}
             </div>
           )}
-        </section>
+        </section>}
 
-        {selectedStudent && (
+        {profileError.route === route && profileError.message && <p className="error-message" role="alert">{profileError.message}</p>}
+        {!isSearchPage && !profileId && !chatId && !["app/requests", "app/requests/outgoing"].includes(route) && <div className="empty-state"><h2>Page not found</h2><a href="#/app">Back to Find peers</a></div>}
+        {profileId && !(profileError.route === route && profileError.message) && selectedStudent?.id !== profileId && <p className="empty-state" role="status">Loading profile...</p>}
+        {profileId && !isEditing && selectedStudent?.id === profileId && (
           <section className="profile-panel">
             <div className="profile-heading">
-              <h3>Student Profile</h3>
+              <div><a className="profile-back" href="#/app">Back to peers</a><h2>{profileId === user.id ? "My profile" : "Student profile"}</h2></div>
               <button
                 className="close-button"
-                onClick={() => setSelectedStudent(null)}
+                onClick={() => { window.location.hash = "/app"; }}
                 aria-label="Close profile"
               >
                 ✕
@@ -1038,27 +747,30 @@ function App() {
                   </p>
                 )}
 
-                <button
+                {selectedStudent.id === user.id && <button
                   className="profile-button"
                   type="button"
                   onClick={() => startEditProfile(selectedStudent)}
                 >
                   Edit Profile
-                </button>
+                </button>}
               </div>
             </div>
-            <ConnectionRequestForm
-              key={`request-${selectedStudent.id}`}
-              student={selectedStudent}
-              defaultCourse={course}
-              onRequestCreated={addConnectionRequest}
-            />
-            <MessageForm key={`message-${selectedStudent.id}`} student={selectedStudent} />
+            {selectedStudent.id !== user.id && (() => {
+              const existing = requests.find((item) => item.sender_id === selectedStudent.id || item.recipient_id === selectedStudent.id);
+              if (existing?.status === "accepted") return <p className="message-success">You're connected. <a className="chat-open" href={`#/app/chat/${existing.id}`}>Open chat</a></p>;
+              if (existing?.status === "pending") return <p className="profile-note">A request is awaiting a response. <a href="#/app/requests">View requests</a></p>;
+              if (!selectedStudent.can_receive_requests) return <p className="profile-note">This sample profile has no registered account to receive requests. Connect with a registered student instead.</p>;
+              if (!selectedStudent.willing_to_advise) return <p className="profile-note">This student is not currently available for advice.</p>;
+              return <ConnectionRequestForm key={selectedStudent.id} student={selectedStudent} defaultCourse={course} onRequestCreated={refreshRequests} />;
+            })()}
+
           </section>
         )}
       </main>
 
       <footer className="footer">
+        <nav className="app-legal-links" aria-label="Information"><a href="#/about">About</a><a href="#/privacy">Privacy policy</a><a href="#/terms">Terms &amp; conditions</a></nav>
         Peer Advice Portal · Software Engineering Project
       </footer>
     </div>
