@@ -1,9 +1,8 @@
 
 import { useEffect, useState } from "react";
 import "./App.css";
-import RegistrationForm from "./RegistrationForm";
 
-const API_URL = "http://127.0.0.1:5000";
+const API_URL = "";
 
 const emptyProfile = {
   name: "",
@@ -309,8 +308,7 @@ function RequestReviewPanel({ requests, loading, onStatusChange, onRefresh }) {
   );
 }
 
-function App() {
-  const [showRegistration, setShowRegistration] = useState(false);
+function App({ user, onLogout }) {
   const [course, setCourse] = useState("CSC 510");
   const [filters, setFilters] = useState(emptyFilters);
   const [students, setStudents] = useState([]);
@@ -620,13 +618,13 @@ function App() {
           </div>
           <div className="header-actions">
             <span className="university">NC State University</span>
-            <button className="profile-button" aria-expanded={showRegistration} aria-controls="registration" onClick={() => setShowRegistration((shown) => !shown)}>Create account</button>
+            <span className="signed-in-name">{user.name}</span>
+            <button className="profile-button" onClick={onLogout}>Sign out</button>
           </div>
         </div>
       </header>
 
       <main className="main">
-        {showRegistration && <RegistrationForm apiUrl={API_URL} onClose={() => setShowRegistration(false)} onRegistered={() => searchStudents()} />}
         <section className="hero">
           <span className="eyebrow">STUDENT-TO-STUDENT SUPPORT</span>
           <h2>Find someone who's taken your course.</h2>
@@ -1059,6 +1057,7 @@ function App() {
       </main>
 
       <footer className="footer">
+        <nav className="app-legal-links" aria-label="Information"><a href="#/about">About</a><a href="#/privacy">Privacy policy</a><a href="#/terms">Terms &amp; conditions</a></nav>
         Peer Advice Portal · Software Engineering Project
       </footer>
     </div>

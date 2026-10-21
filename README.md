@@ -4,7 +4,7 @@
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
-> **Project status:** Early working prototype. The application includes fictional sample students and account registration. Messages can be saved locally; login, student inboxes, and verified course histories are not implemented yet.
+> **Project status:** Early working prototype. The application includes fictional sample students and account registration. Messages can be saved locally; login uses password verification and session cookies; student inboxes and verified course histories are not implemented yet.
 
 See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, limitations, and outstanding work.
 
@@ -155,11 +155,11 @@ Quick browser checks:
 
 Restart the backend after updating to create the accounts table in your existing database. Click **Create account** in the frontend header. Enter your name, email, a password of 12–128 characters, program, and year. Optional fields include bio, interests, and comma-separated completed courses. Opt in to advising to appear in searches for those courses.
 
-The registration API accepts `name`, `email`, `password`, `program`, and `year`, plus optional `bio`, `interests`, `completed_courses` (an array of course codes), and `willing_to_advise` (a boolean, defaulting to false). Email uniqueness ignores case. Account and profile creation are transactional. Registration does not sign you in; login and email verification are not yet implemented. Course completion is self-reported.
+The registration API accepts `name`, `email`, `password`, `program`, and `year`, plus optional `bio`, `interests`, `completed_courses` (an array of course codes), and `willing_to_advise` (a boolean, defaulting to false). Email uniqueness ignores case. Account and profile creation are transactional. After registration, sign in on the login page. Email verification is not yet implemented. Course completion is self-reported.
 
 ## Development notes
 
-- The frontend currently calls `http://127.0.0.1:5000` directly. Run Flask on port **5000** unless you also update `API_URL` in `frontend/src/App.jsx`.
+- The frontend uses same-origin `/api` requests. Vite proxies them to `http://127.0.0.1:5000`; restart Vite after updating its configuration. Production hosting must proxy `/api` to Flask as well.
 - Vite usually runs on port **5173**. If that port is busy, use the URL printed by `npm run dev`.
 - Flask runs in **debug mode** for local development. Do not deploy the development server to production.
 - SQLite is the active storage backend. Runtime databases are ignored and are no longer tracked in this version. Existing clones must follow the backup instructions below before pulling the removal. Historical commits still contain the old database.
@@ -215,7 +215,7 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 ## Planned improvements
 
-- Student login and ownership checks for the existing profile editor.
+- Ownership checks for the existing profile editor and authenticated API writes.
 - Course completion reporting and richer course discovery.
 - Persistent advice requests, recipient inboxes, and authenticated messaging.
 - Improved testing, validation, privacy, and deployment configuration.
@@ -268,3 +268,20 @@ GitHub Actions runs backend tests, frontend ESLint, and the frontend production
 build on every push and pull request. No private credentials are required. See
 [CI instructions](docs/CONTINUOUS_INTEGRATION.md) for local commands and how to
 inspect a run. The build badge links to the live workflow evidence.
+
+### Login and public pages
+
+Open the Vite URL to reach the login landing page. Create an account, then sign
+in with its email and password to open `#/app`. Existing fictional seed students
+have no login accounts. About, Privacy policy, and Terms & conditions are
+available without signing in. These informational policy pages describe the
+prototype and should be reviewed by the project team before public deployment.
+
+Sessions use an HttpOnly, SameSite=Lax cookie and expire after eight hours.
+Refresh restores a valid session; Sign out clears it. For stable sessions across
+backend restarts, set `FLASK_SECRET_KEY` to a strong private value in `backend/.env`.
+Without it, development uses a fresh random key per process. Use HTTPS and set
+`COOKIE_SECURE=true` when deploying. The login gate controls frontend navigation;
+existing student/profile/message endpoints still need ownership and permission
+checks. Password reset, email verification, and login rate limiting are not
+implemented in this change.

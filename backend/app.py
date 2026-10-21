@@ -1,13 +1,15 @@
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, session
 from flask_cors import CORS
 import sqlite3
 import re
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from pathlib import Path
 from contextlib import contextmanager
 
 import os
+import secrets
+from datetime import timedelta
 from dotenv import load_dotenv
 from supabase import create_client
 
@@ -26,6 +28,13 @@ supabase = (
 )
 
 app = Flask(__name__)
+app.config.update(
+    SECRET_KEY=os.getenv("FLASK_SECRET_KEY") or secrets.token_hex(32),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.getenv("COOKIE_SECURE") == "true",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=8),
+)
 CORS(app)
 
 DB_PATH = Path(__file__).parent / "peer_advice.db"
@@ -270,6 +279,54 @@ def initialize_database():
 
 @app.route("/api/health")
 def health():
+    return jsonify({"status": "ok"})
+
+
+DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_hex(32))
+
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send an email and password."}), 400
+    email, password = data.get("email"), data.get("password")
+    if (not isinstance(email, str) or not isinstance(password, str)
+            or not email.strip() or not password or len(email) > 254
+            or len(password) > 128):
+        return jsonify({"error": "Enter your email and password."}), 400
+    with get_db() as db:
+        account = db.execute(
+            "SELECT student_id, password_hash FROM accounts WHERE email = ?",
+            (email.strip().lower(),),
+        ).fetchone()
+        valid = check_password_hash(
+            account["password_hash"] if account else DUMMY_PASSWORD_HASH, password
+        )
+        if not account or not valid:
+            return jsonify({"error": "Email or password is incorrect."}), 401
+        student = fetch_student(db, account["student_id"])
+    if student is None:
+        return jsonify({"error": "This account has no student profile."}), 401
+    session.clear()
+    session.permanent = True
+    session["student_id"] = student["id"]
+    return jsonify({"student": student})
+
+
+@app.route("/api/auth/me")
+def current_user():
+    with get_db() as db:
+        student = fetch_student(db, session.get("student_id"))
+    if student is None:
+        session.clear()
+        return jsonify({"error": "Sign in to continue."}), 401
+    return jsonify({"student": student})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    session.clear()
     return jsonify({"status": "ok"})
 
 

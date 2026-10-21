@@ -47,8 +47,8 @@ export default function RegistrationForm({ apiUrl, onRegistered, onClose }) {
       {registered ? (
         <div role="status">
           <p className="message-success">Your account and student profile have been created.</p>
-          <p>If you opted in to advise, students can find you through your completed courses.</p>
-          <button className="profile-button" onClick={onClose}>Browse students</button>
+          <p>Sign in with your email and password to continue. If you opted in to advise, students can find you through your completed courses.</p>
+          <button className="profile-button" onClick={onClose}>Back to sign in</button>
         </div>
       ) : (
         <form className="registration-form" onSubmit={register}>
