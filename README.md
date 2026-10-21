@@ -180,7 +180,7 @@ The registration API accepts `name`, `email`, `password`, `program`, and `year`,
 - Supabase PostgreSQL is the only active storage backend. Existing SQLite files are ignored, left untouched, and never opened by the application. They are not imported automatically.
 - The example students are fictional; no real student information is required for the prototype.
 - Requests and chat use the signed-in account identity. Only the two participants can read requests/conversations, and only the recipient can accept or decline. Email/push notifications are not implemented.
-- Backend checks require a dedicated localhost `TEST_DATABASE_URL`; see [verification instructions](docs/SUPABASE.md). Run frontend checks with `npm run build` and `npm run lint` from `frontend`.
+- Backend checks require a dedicated localhost `TEST_DATABASE_URL`; see [verification instructions](docs/SUPABASE.md). Run frontend checks with `npm test`, `npm run lint`, and `npm run build` from `frontend`. See [frontend testing](frontend/README.md) for interaction-test scenarios.
 
 ## Common troubleshooting
 
@@ -254,7 +254,7 @@ unused backups. Keep credentials out of Git and the frontend. See
 
 ### Automated checks
 
-GitHub Actions runs backend tests, frontend ESLint, and the frontend production
+GitHub Actions runs backend tests, frontend interaction tests, ESLint, and the frontend production
 build on every push and pull request. No private credentials are required. See
 [CI instructions](docs/CONTINUOUS_INTEGRATION.md) for local commands and how to
 inspect a run. The build badge links to the live workflow evidence.

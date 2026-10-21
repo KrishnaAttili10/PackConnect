@@ -1,6 +1,6 @@
 # Continuous integration
 
-The `Build` workflow in `.github/workflows/ci.yml` runs for every branch push
+The `Tests and Quality` workflow in `.github/workflows/ci.yml` runs for every branch push
 and pull request. It can also be started manually from the GitHub Actions page
 once the workflow exists on the default branch.
 
@@ -9,7 +9,7 @@ once the workflow exists on the default branch.
 | Job | Environment | Commands |
 | --- | --- | --- |
 | Backend tests | Ubuntu, Python 3.12 | Install `backend/requirements.txt`; run unittest discovery |
-| Frontend lint and build | Ubuntu, Node.js 24 | Run `npm ci`, `npm run lint`, and `npm run build` in `frontend` |
+| Frontend tests, lint and build | Ubuntu, Node.js 24 | Run `npm ci`, `npm test`, `npm run lint`, and `npm run build` in `frontend` |
 
 Each job has a ten-minute timeout. Installation, test, lint, or build failures
 fail the corresponding job and workflow; failures are not suppressed.
@@ -36,6 +36,7 @@ From the repository root after installing dependencies and setting
 .\.venv\Scripts\python.exe -m unittest discover -s backend -p "test_*.py" -v
 cd frontend
 npm.cmd ci
+npm.cmd test
 npm.cmd run lint
 npm.cmd run build
 cd ..
@@ -48,7 +49,7 @@ from CI; the hosted workflow is the evidence for Python 3.12 and Node.js 24.
 ## Review the evidence
 
 1. Push a commit or open a pull request.
-2. Open the repository's **Actions** tab and select **Build**.
+2. Open the repository's **Actions** tab and select **Tests and Quality**.
 3. Select the run for the exact branch and commit you are reviewing.
 4. Confirm both jobs succeed and inspect their installation/check logs.
 5. If a job fails, fix the cause and push another commit. Preserve the failed
@@ -58,7 +59,10 @@ The README badge links to this workflow and displays the latest push result.
 After this workflow is merged to `main`, the badge can be scoped to `main` with
 `?branch=main&event=push` for an explicit default-branch status.
 
-This issue adds test execution, lint, and build automation. It does not add
-coverage, a numerical test badge, frontend interaction tests, or branch
-protection. Those are separate tasks. CI checks can fail a PR, but preventing
+Frontend interaction tests run in jsdom with deterministic mocked API responses;
+no Flask server, Supabase connection, or credentials are needed. See
+[frontend testing](../frontend/README.md) for the scenarios and watch command.
+
+Coverage reporting, a numerical test badge, and branch protection are separate
+tasks. CI checks can fail a PR, but preventing
 merges of failing PRs requires repository branch rules.

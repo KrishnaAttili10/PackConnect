@@ -66,7 +66,7 @@ jobs:
           if-no-files-found: error
 
   frontend:
-    name: Frontend lint and build
+    name: Frontend tests, lint and build
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -87,6 +87,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Run frontend interaction tests
+        run: npm test
 
       - name: Run ESLint
         run: npm run lint
