@@ -495,7 +495,14 @@ def student_profile(student_id):
 
 @app.route("/api/students/<int:student_id>", methods=["PUT"])
 def update_student(student_id):
-    data = request.get_json(silent=True) or {}
+    owner_id = session.get("student_id")
+    if owner_id is None:
+        return jsonify({"error": "Sign in to edit your profile."}), 401
+    if owner_id != student_id:
+        return jsonify({"error": "You can only edit your own profile."}), 403
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Send a JSON object with your profile details."}), 400
     payload = profile_payload(data)
 
     if not payload["name"] or not payload["program"] or not payload["year"]:

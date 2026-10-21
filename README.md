@@ -11,7 +11,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 ## Current features
 
 - Register an account with email, password, and a student profile. Passwords are hashed; emails remain private. Advising is optional.
-- Create and edit profiles with completed/current courses, skills, and advice topics. Profile editing currently has no authentication or ownership checks.
+- Create and edit profiles with completed/current courses, skills, and advice topics. Only the signed-in owner can edit their profile; the API rejects unauthenticated or non-owner updates.
 - Search by course code (for example, `CSC 510`) and filter by program, year, skills, advice topics, and advising availability.
 - Display matching students who opted in to offer advice by default; the availability filter can include other profiles.
 - Create and accept/decline advice requests within the current browser session. Requests are not delivered or saved and disappear on reload.
@@ -215,7 +215,7 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 ## Planned improvements
 
-- Ownership checks for the existing profile editor and authenticated API writes.
+- Authenticated permissions for the remaining profile-creation and messaging endpoints.
 - Course completion reporting and richer course discovery.
 - Persistent advice requests, recipient inboxes, and authenticated messaging.
 - Improved testing, validation, privacy, and deployment configuration.
@@ -282,6 +282,20 @@ Refresh restores a valid session; Sign out clears it. For stable sessions across
 backend restarts, set `FLASK_SECRET_KEY` to a strong private value in `backend/.env`.
 Without it, development uses a fresh random key per process. Use HTTPS and set
 `COOKIE_SECURE=true` when deploying. The login gate controls frontend navigation;
-existing student/profile/message endpoints still need ownership and permission
-checks. Password reset, email verification, and login rate limiting are not
+profile updates require the signed-in owner. Standalone profile creation and
+message endpoints still need additional permissions. Password reset, email verification, and login rate limiting are not
 implemented in this change.
+
+### Workspace pages
+
+- `#/app`: Find peers with course search, collapsible advanced filters, and removable filter chips.
+- `#/app/students/<id>`: A dedicated student profile, including advice/message forms when available.
+- `#/app/profile`: Your own profile, with an Edit Profile button.
+- `#/app/profile/edit`: Edit your own profile; Save persists changes and Cancel discards edits.
+- `#/app/requests`: Session-only request preview, not a persistent recipient inbox.
+
+Shared navigation includes a mobile menu. Profile links support refresh and
+browser Back/Forward. Profiles are created during registration; the search page
+no longer offers duplicate profile creation. `PUT /api/students/<id>` returns
+401 without a session, 403 for another user's profile, and 400 for invalid input.
+Permission failures do not modify profile or course records.

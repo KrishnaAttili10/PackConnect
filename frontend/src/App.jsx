@@ -248,7 +248,7 @@ function RequestReviewPanel({ requests, loading, onStatusChange, onRefresh }) {
       <div className="section-heading">
         <div>
           <h3>Advice requests</h3>
-          <p>Frontend-only prototype until requests belong to Supabase accounts.</p>
+          <p>These are previews in your current tab. They are not delivered and clear on reload.</p>
         </div>
         <button type="button" onClick={onRefresh}>
           Clear handled
@@ -308,14 +308,18 @@ function RequestReviewPanel({ requests, loading, onStatusChange, onRefresh }) {
   );
 }
 
-function App({ user, onLogout }) {
+function App({ user, onLogout, route, onUserUpdated }) {
+  const isSearchPage = route === "app";
+  const profileId = /^app\/students\/[1-9]\d*$/.test(route) ? Number(route.split("/")[2]) : ["app/profile", "app/profile/edit"].includes(route) ? user.id : null;
+  const isEditing = route === "app/profile/edit";
+  const [menuOpen, setMenuOpen] = useState(false);
   const [course, setCourse] = useState("CSC 510");
   const [filters, setFilters] = useState(emptyFilters);
   const [students, setStudents] = useState([]);
   const [selectedStudent, setSelectedStudent] = useState(null);
+  const [profileError, setProfileError] = useState({ route: "", message: "" });
   const [profileForm, setProfileForm] = useState(emptyProfile);
   const [editingStudentId, setEditingStudentId] = useState(null);
-  const [showProfileForm, setShowProfileForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [requests, setRequests] = useState([]);
   const [requestsLoading] = useState(false);
@@ -386,26 +390,6 @@ function App({ user, onLogout }) {
     }
   }
 
-  async function viewProfile(studentId) {
-    setError("");
-    setNotice("");
-
-    try {
-      const response = await fetch(
-        `${API_URL}/api/students/${studentId}`
-      );
-
-      if (!response.ok) {
-        throw new Error("Unable to load profile.");
-      }
-
-      const data = await response.json();
-      setSelectedStudent(data.student ?? data);
-    } catch {
-      setError("Could not load the student's profile.");
-    }
-  }
-
   function addConnectionRequest(request) {
     setRequests((currentRequests) => [request, ...currentRequests]);
   }
@@ -472,18 +456,6 @@ function App({ user, onLogout }) {
   }
 
 
-  function startCreateProfile() {
-    setEditingStudentId(null);
-    setProfileForm({
-      ...emptyProfile,
-      completed_courses: course.trim(),
-    });
-    setShowProfileForm(true);
-    setSelectedStudent(null);
-    setError("");
-    setNotice("");
-  }
-
   function startEditProfile(student) {
     setEditingStudentId(student.id);
     setProfileForm({
@@ -500,14 +472,14 @@ function App({ user, onLogout }) {
       current_courses: coursesToText(student.current_courses),
       willing_to_advise: Boolean(student.willing_to_advise),
     });
-    setShowProfileForm(true);
+    window.location.hash = "/app/profile/edit";
     setError("");
     setNotice("");
   }
 
   function closeProfileForm() {
     if (profileSaving) return;
-    setShowProfileForm(false);
+    window.location.hash = "/app/profile";
     setEditingStudentId(null);
     setProfileForm(emptyProfile);
   }
@@ -549,10 +521,11 @@ function App({ user, onLogout }) {
       if (!response.ok) throw new Error(data.error || "Unable to save profile.");
 
       setSelectedStudent(data.student);
-      setShowProfileForm(false);
+      window.location.hash = "/app/profile";
       setEditingStudentId(null);
       setProfileForm(emptyProfile);
-      setNotice(editingStudentId ? "Profile updated." : "Profile created.");
+      setNotice("Profile updated.");
+      onUserUpdated(data.student);
       setStudents((currentStudents) => {
         if (!profileMatchesSearch(data.student, payload.completed_courses)) {
           return currentStudents.filter(
@@ -560,12 +533,7 @@ function App({ user, onLogout }) {
           );
         }
 
-        const summary = {
-          id: data.student.id,
-          name: data.student.name,
-          program: data.student.program,
-          year: data.student.year,
-        };
+        const summary = data.student;
 
         if (currentStudents.some((student) => student.id === summary.id)) {
           return currentStudents.map((student) =>
@@ -605,6 +573,36 @@ function App({ user, onLogout }) {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (!profileId) return;
+    const controller = new AbortController();
+    async function loadProfile() {
+      try {
+        const response = await fetch(`/api/students/${profileId}`, { signal: controller.signal });
+        if (!response.ok) throw new Error(response.status === 404 ? "Student profile not found." : "Could not load this profile.");
+        const { student } = await response.json();
+        if (controller.signal.aborted) return;
+        setSelectedStudent(student);
+        setProfileError({ route, message: "" });
+        setError("");
+        setEditingStudentId(user.id);
+        setProfileForm({
+          ...student,
+          interests: Array.isArray(student.interests) ? student.interests.join(", ") : student.interests || "",
+          skills: student.skills || "", advice_topics: student.advice_topics || "",
+          bio: student.bio || "",
+          completed_courses: coursesToText(student.completed_courses),
+          current_courses: coursesToText(student.current_courses),
+          willing_to_advise: Boolean(student.willing_to_advise),
+        });
+      } catch (err) {
+        if (!controller.signal.aborted) { setSelectedStudent(null); setProfileError({ route, message: err.message }); }
+      }
+    }
+    loadProfile();
+    return () => controller.abort();
+  }, [profileId, user.id, route]);
+
   return (
     <div className="app">
       <header className="header">
@@ -624,8 +622,19 @@ function App({ user, onLogout }) {
         </div>
       </header>
 
+      <nav className="workspace-nav" aria-label="Main navigation">
+        <button className="menu-toggle" type="button" aria-expanded={menuOpen} aria-controls="workspace-links" onClick={() => setMenuOpen(!menuOpen)}>Menu</button>
+        <div id="workspace-links" className={menuOpen ? "workspace-links open" : "workspace-links"} onClick={() => setMenuOpen(false)}>
+          <a href="#/app" aria-current={isSearchPage ? "page" : undefined}>Find peers</a>
+          <a href="#/app/requests" aria-current={route === "app/requests" ? "page" : undefined}>Requests {requests.length > 0 && <span>{requests.length}</span>}</a>
+          <a href="#/app/profile" aria-current={route.startsWith("app/profile") ? "page" : undefined}>My profile</a>
+          <a href="#/about">About</a>
+        </div>
+      </nav>
       <main className="main">
-        <section className="hero">
+        {error && <div className="error-message" role="alert">{error}</div>}
+        {notice && <div className="success-message" role="status">{notice}</div>}
+        {isSearchPage && <section className="hero">
           <span className="eyebrow">STUDENT-TO-STUDENT SUPPORT</span>
           <h2>Find someone who's taken your course.</h2>
           <p>
@@ -652,6 +661,7 @@ function App({ user, onLogout }) {
             </button>
           </form>
 
+          <details className="advanced-filters"><summary>Advanced filters</summary>
           <div className="filter-panel" aria-label="Search filters">
             <label>
               Program
@@ -711,30 +721,25 @@ function App({ user, onLogout }) {
             </button>
           </div>
 
+          </details>
+          <div className="filter-chips" aria-label="Active filters">
+            {Object.entries(filters).filter(([key, value]) => key !== "availableOnly" && value.trim()).map(([key, value]) => <button key={key} type="button" onClick={() => { const next = { ...filters, [key]: "" }; setFilters(next); searchStudents(course, next); }}>{key.replaceAll("_", " ")}: {value} (remove)</button>)}
+          </div>
           <p className="search-hint">
             Try searching for CSC 510, CSC 540, or CSC 515.
           </p>
 
-          <button
-            className="secondary-action"
-            type="button"
-            onClick={startCreateProfile}
-          >
-            Create Student Profile
-          </button>
-        </section>
+        </section>}
 
-        {error && <div className="error-message">{error}</div>}
-        {notice && <div className="success-message">{notice}</div>}
-
+        {route === "app/requests" && <><div className="page-intro"><span className="eyebrow">YOUR CONNECTIONS</span><h2>Advice requests</h2><p>This is a session-only preview. Requests are not delivered to other users and disappear when you reload.</p></div>
         <RequestReviewPanel
           requests={requests}
           loading={requestsLoading}
           onStatusChange={updateConnectionRequestStatus}
           onRefresh={clearHandledRequests}
-        />
+        /></>}
 
-        {showProfileForm && (
+        {isEditing && selectedStudent?.id === user.id && (
           <section className="profile-editor">
             <div className="profile-heading">
               <div>
@@ -895,7 +900,7 @@ function App({ user, onLogout }) {
           </section>
         )}
 
-        <section className="results">
+        {isSearchPage && <section className="results">
           <div className="section-heading">
             <div>
               <h3>Students who can help</h3>
@@ -948,25 +953,25 @@ function App({ user, onLogout }) {
                       : "Not currently available"}
                   </span>
 
-                  <button
-                    className="profile-button"
-                    onClick={() => viewProfile(student.id)}
-                  >
+                  <a className="profile-button peer-profile-link" href={`#/app/students/${student.id}`}>
                     View Profile →
-                  </button>
+                  </a>
                 </article>
               ))}
             </div>
           )}
-        </section>
+        </section>}
 
-        {selectedStudent && (
+        {profileError.route === route && profileError.message && <p className="error-message" role="alert">{profileError.message}</p>}
+        {!isSearchPage && !profileId && route !== "app/requests" && <div className="empty-state"><h2>Page not found</h2><a href="#/app">Back to Find peers</a></div>}
+        {profileId && !(profileError.route === route && profileError.message) && selectedStudent?.id !== profileId && <p className="empty-state" role="status">Loading profile...</p>}
+        {profileId && !isEditing && selectedStudent?.id === profileId && (
           <section className="profile-panel">
             <div className="profile-heading">
-              <h3>Student Profile</h3>
+              <div><a className="profile-back" href="#/app">Back to peers</a><h2>{profileId === user.id ? "My profile" : "Student profile"}</h2></div>
               <button
                 className="close-button"
-                onClick={() => setSelectedStudent(null)}
+                onClick={() => { window.location.hash = "/app"; }}
                 aria-label="Close profile"
               >
                 ✕
@@ -1036,22 +1041,23 @@ function App({ user, onLogout }) {
                   </p>
                 )}
 
-                <button
+                {selectedStudent.id === user.id && <button
                   className="profile-button"
                   type="button"
                   onClick={() => startEditProfile(selectedStudent)}
                 >
                   Edit Profile
-                </button>
+                </button>}
               </div>
             </div>
+            {selectedStudent.id !== user.id && selectedStudent.willing_to_advise ? <>
             <ConnectionRequestForm
               key={`request-${selectedStudent.id}`}
               student={selectedStudent}
               defaultCourse={course}
               onRequestCreated={addConnectionRequest}
             />
-            <MessageForm key={`message-${selectedStudent.id}`} student={selectedStudent} />
+            <MessageForm key={`message-${selectedStudent.id}`} student={selectedStudent} /></> : selectedStudent.id !== user.id && <p className="profile-note">This student is not currently available for advice.</p>}
           </section>
         )}
       </main>

@@ -1,0 +1,65 @@
+import tempfile
+import unittest
+from pathlib import Path
+
+import app as portal
+
+
+class ProfilePermissionsTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.original_path = portal.DB_PATH
+        portal.DB_PATH = Path(self.directory.name) / "permissions.db"
+        portal.initialize_database()
+        self.client = portal.app.test_client()
+        self.credentials = {"email": "owner@example.edu", "password": "a long test password"}
+        response = self.client.post("/api/auth/register", json={
+            **self.credentials, "name": "Owner", "program": "Computer Science",
+            "year": "First Year", "completed_courses": ["CSC 510"],
+        })
+        self.student_id = response.get_json()["student"]["id"]
+        self.payload = {
+            "name": "Updated Owner", "program": "Computer Science", "year": "Second Year",
+            "bio": "New bio", "interests": "Databases", "skills": "Python",
+            "advice_topics": "Projects", "willing_to_advise": True,
+            "completed_courses": ["csc 510", "CSC 540"], "current_courses": ["CSC 515"],
+        }
+
+    def tearDown(self):
+        portal.DB_PATH = self.original_path
+        self.directory.cleanup()
+
+    def test_unauthenticated_update_is_rejected_without_changes(self):
+        before = self.client.get(f"/api/students/{self.student_id}").get_json()
+        response = self.client.put(f"/api/students/{self.student_id}", json=self.payload)
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(before, self.client.get(f"/api/students/{self.student_id}").get_json())
+
+    def test_other_user_cannot_modify_profile_or_courses(self):
+        self.client.post("/api/auth/login", json=self.credentials)
+        before = self.client.get("/api/students/1").get_json()
+        self.assertEqual(self.client.put("/api/students/1", json=self.payload).status_code, 403)
+        self.assertEqual(before, self.client.get("/api/students/1").get_json())
+
+    def test_owner_update_persists_and_updates_current_user(self):
+        self.client.post("/api/auth/login", json=self.credentials)
+        response = self.client.put(f"/api/students/{self.student_id}", json=self.payload)
+        self.assertEqual(response.status_code, 200)
+        profile = self.client.get("/api/auth/me").get_json()["student"]
+        self.assertEqual(profile["name"], "Updated Owner")
+        self.assertEqual(profile["completed_courses"], ["CSC 510", "CSC 540"])
+        self.assertEqual(profile["current_courses"], ["CSC 515"])
+        matches = self.client.get("/api/students/search?course=CSC%20540&skills=Python").get_json()["students"]
+        self.assertEqual([row["id"] for row in matches], [self.student_id])
+
+    def test_invalid_payload_is_rejected_without_changes(self):
+        self.client.post("/api/auth/login", json=self.credentials)
+        before = self.client.get(f"/api/students/{self.student_id}").get_json()
+        for payload in [None, [], {}, {**self.payload, "name": " "}]:
+            with self.subTest(payload=payload):
+                self.assertEqual(self.client.put(f"/api/students/{self.student_id}", json=payload).status_code, 400)
+        self.assertEqual(before, self.client.get(f"/api/students/{self.student_id}").get_json())
+
+
+if __name__ == "__main__":
+    unittest.main()

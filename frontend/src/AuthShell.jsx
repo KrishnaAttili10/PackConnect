@@ -71,9 +71,9 @@ export default function AuthShell() {
 
   useEffect(() => {
     if (checking) return;
-    if (route === "app" && !user) window.location.hash = "/login";
+    if ((route === "app" || route.startsWith("app/")) && !user) window.location.hash = "/login";
     if (user && (route === "login" || route === "register")) window.location.hash = "/app";
-    document.title = `${pages[route]?.title || (route === "app" ? "Find your people" : route === "register" ? "Create account" : "Sign in")} | PackConnect`;
+    document.title = `${pages[route]?.title || (route.startsWith("app/profile") ? "My profile" : route.startsWith("app/students/") ? "Student profile" : route === "app/requests" ? "Advice requests" : route === "app" ? "Find your people" : route === "register" ? "Create account" : "Sign in")} | PackConnect`;
   }, [route, user, checking]);
 
   async function signIn(event) {
@@ -108,7 +108,7 @@ export default function AuthShell() {
   }
 
   if (checking && !pages[route]) return <div className="auth-loading" role="status">Connecting to your Pack…</div>;
-  if (user && route === "app") return <>{error && <div className="auth-global-error" role="alert">{error}</div>}<App user={user} onLogout={signOut} /></>;
+  if (user && (route === "app" || route.startsWith("app/"))) return <>{error && <div className="auth-global-error" role="alert">{error}</div>}<App user={user} onLogout={signOut} route={route} onUserUpdated={setUser} /></>;
 
   return <div className="auth-site">
     <header className="auth-header"><a className="auth-brand" href={user ? "#/app" : "#/login"}><span className="auth-brand-mark" aria-hidden="true">P<span>c</span></span>PackConnect<span className="auth-beta">STUDENT EDITION</span></a><a className="auth-about" href={user ? "#/app" : "#/about"}>{user ? "Back to the app" : "Meet PackConnect"}<span aria-hidden="true"> ↗</span></a></header>
