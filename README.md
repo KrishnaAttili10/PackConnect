@@ -1,6 +1,9 @@
 # PackConnect — Peer Advice Portal
 
-[![Build](https://github.com/kkattili_ncstate/PackConnect/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/kkattili_ncstate/PackConnect/actions/workflows/ci.yml)
+
+
+[![Build](https://github.com/kkattili_ncstate/PackConnect/actions/workflows/build.yml/badge.svg?branch=development)](https://github.com/kkattili_ncstate/PackConnect/actions/workflows/build.yml?query=branch%3Adevelopment)
+
 
 PackConnect is a student-to-student peer-advice discovery portal being developed for NC State University. Students can search by course code to find peers who have completed a course and volunteered to share advice.
 
