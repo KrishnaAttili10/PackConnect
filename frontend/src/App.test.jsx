@@ -25,6 +25,8 @@ function Workspace({ initialRoute = 'app', onUserUpdated = () => {} }) {
 
 beforeEach(() => {
   fetch.mockImplementation(async (url, options = {}) => {
+    if (url.startsWith('/api/courses?'))
+      return response({ courses: ['CSC 510', 'CSC 540'] })
     if (url.startsWith('/api/students/search?')) return response([student])
     if (url === '/api/students/1' && !options.method)
       return response({ student })
@@ -49,6 +51,34 @@ const writes = () =>
   fetch.mock.calls.filter(([, options]) => options?.method === 'PUT')
 
 describe('peer search', () => {
+  it('searches with the selected suggestion and preserves advanced filters', async () => {
+    const user = userEvent.setup()
+    render(<Workspace />)
+    await screen.findByRole('heading', { name: student.name })
+    await user.click(screen.getByText('Advanced filters'))
+    await user.type(
+      screen.getByRole('textbox', { name: 'Program' }),
+      'Computer Science',
+    )
+    const input = screen.getByRole('combobox', { name: 'Course code' })
+    await user.clear(input)
+    await user.type(input, 'csc5')
+    await screen.findByRole('option', { name: 'CSC 540' })
+    const searches = () =>
+      fetch.mock.calls.filter(([url]) =>
+        url.startsWith('/api/students/search?'),
+      )
+    expect(searches()).toHaveLength(1)
+    await user.keyboard('{ArrowUp}{Enter}')
+    expect(input).toHaveValue('CSC 540')
+    expect(searches()).toHaveLength(1)
+    await user.keyboard('{Enter}')
+    await waitFor(() => expect(searches()).toHaveLength(2))
+    expect(searches()[1][0]).toBe(
+      '/api/students/search?course=CSC+540&program=Computer+Science&available=true',
+    )
+  })
+
   it('shows loading, then matching peers, and submits the entered course', async () => {
     const user = userEvent.setup()
     const pending = holdSearch()
@@ -59,9 +89,9 @@ describe('peer search', () => {
     expect(
       await screen.findByRole('heading', { name: student.name }),
     ).toBeInTheDocument()
-    await user.clear(screen.getByRole('textbox', { name: 'Course code' }))
+    await user.clear(screen.getByRole('combobox', { name: 'Course code' }))
     await user.type(
-      screen.getByRole('textbox', { name: 'Course code' }),
+      screen.getByRole('combobox', { name: 'Course code' }),
       'CSC 540',
     )
     await user.click(screen.getByRole('button', { name: 'Find Students' }))

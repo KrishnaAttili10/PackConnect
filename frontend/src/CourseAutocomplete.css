@@ -1,0 +1,56 @@
+.course-autocomplete {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.course-autocomplete input {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.course-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+.course-suggestions {
+  position: absolute;
+  top: 56px;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 280px;
+  overflow-y: auto;
+  background: white;
+  color: #1f2937;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px #0002;
+}
+
+.course-suggestions ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.course-suggestions [role='option'] {
+  padding: 12px 16px;
+  cursor: pointer;
+}
+
+.course-suggestions [role='option']:hover,
+.course-suggestions [aria-selected='true'] {
+  background: #fef2f2;
+  color: #a50000;
+}
+
+.course-suggestions p {
+  margin: 0;
+  padding: 12px 16px;
+  font-size: 0.875rem;
+}

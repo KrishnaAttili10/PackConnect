@@ -3,6 +3,7 @@ import './App.css'
 import { ConnectionRequestForm, RequestInbox, Conversation } from './Messaging'
 import { useRequests } from './useRequests'
 import NotificationBell from './NotificationBell'
+import CourseAutocomplete from './CourseAutocomplete'
 
 const API_URL = ''
 
@@ -152,12 +153,11 @@ function App({ user, onLogout, route, onUserUpdated }) {
   }
 
   function profileMatchesSearch(student, completedCourses) {
-    const normalizedCourse = course.trim().toUpperCase()
+    const courseKey = (value) => value.replace(/[\s-]+/g, '').toUpperCase()
+    const normalizedCourse = courseKey(course)
     const hasCourseMatch =
       !normalizedCourse ||
-      completedCourses
-        .map((courseCode) => courseCode.toUpperCase())
-        .includes(normalizedCourse)
+      completedCourses.map(courseKey).includes(normalizedCourse)
 
     const containsFilter = (value, filterValue) =>
       !filterValue.trim() ||
@@ -422,13 +422,7 @@ function App({ user, onLogout, route, onUserUpdated }) {
                 searchStudents()
               }}
             >
-              <input
-                type="text"
-                value={course}
-                onChange={(event) => setCourse(event.target.value)}
-                placeholder="Enter a course code, e.g. CSC 510"
-                aria-label="Course code"
-              />
+              <CourseAutocomplete value={course} onChange={setCourse} />
               <button type="submit" disabled={loading}>
                 {loading ? 'Searching...' : 'Find Students'}
               </button>

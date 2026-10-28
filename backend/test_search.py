@@ -49,9 +49,55 @@ class SearchTests(PostgresTestCase):
         return rows
 
     def test_course_search_normalizes_case_and_outer_whitespace(self):
-        for course in ("CSC 510", "csc 510", "  CsC 510  "):
+        for course in ("CSC 510", "csc 510", "  CsC 510  ", "CSC510", "csc-510", "CSC   510"):
             with self.subTest(course=course):
                 self.assert_matches(["Ada", "Blake", "Casey", "Faye"], course=course)
+
+    def test_course_suggestions_normalize_deduplicate_and_match_prefixes(self):
+        with portal.get_db() as db:
+            db.execute("INSERT INTO completed_courses (student_id, course_code) VALUES (%s, 'csc-510')",
+                       (self.ids["Ada"],))
+        for query in ("csc", " CSC ", "csc5", "CSC-5"):
+            response = self.client.get('/api/courses', query_string={"q": query})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json(), {"courses": ["CSC 510", "CSC 540"]})
+        self.assert_matches(["Ada", "Blake", "Casey", "Faye"], course="CSC510")
+
+    def test_course_suggestions_only_include_registered_completed_courses(self):
+        with portal.get_db() as db:
+            db.execute("DELETE FROM accounts WHERE student_id = %s", (self.ids["Eli"],))
+            db.execute("INSERT INTO current_courses (student_id, course_code) VALUES (%s, 'CSC 555')",
+                       (self.ids["Ada"],))
+        self.assertEqual(self.client.get('/api/courses?q=CSC').get_json(), {"courses": ["CSC 510"]})
+
+    def test_suggested_code_finds_legacy_course_format_and_updates_with_profile(self):
+        with portal.get_db() as db:
+            db.execute("UPDATE completed_courses SET course_code = ' ece- 570 ' WHERE student_id = %s",
+                       (self.ids["Eli"],))
+        suggestion = self.client.get('/api/courses?q=ece5').get_json()["courses"]
+        self.assertEqual(suggestion, ["ECE 570"])
+        self.assert_matches(["Eli"], course=suggestion[0])
+        with self.client.session_transaction() as session:
+            session["student_id"] = self.ids["Eli"]
+        response = self.client.put(f'/api/students/{self.ids["Eli"]}', json={
+            "name": "Eli", "program": "Computer Science", "year": "Second Year",
+            "completed_courses": ["ECE 571"], "willing_to_advise": True,
+        })
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(self.client.get('/api/courses?q=ECE').get_json(), {"courses": ["ECE 571"]})
+        self.assert_matches([], course="ECE 570")
+        self.assert_matches(["Eli"], course="ECE571")
+
+    def test_course_suggestions_bound_results_and_treat_query_as_literal(self):
+        with portal.get_db() as db:
+            for number in range(600, 620):
+                db.execute("INSERT INTO completed_courses (student_id, course_code) VALUES (%s, %s)",
+                           (self.ids["Ada"], f"CSC {number}"))
+        courses = self.client.get('/api/courses?q=CSC6').get_json()["courses"]
+        self.assertEqual(courses, [f"CSC {n}" for n in range(600, 610)])
+        for query in ('', ' ', '%', '_', "' OR 1=1 --", 'C' * 31, 'NONEXISTENT'):
+            self.assertEqual(self.client.get('/api/courses', query_string={"q": query}).get_json(),
+                             {"courses": []})
 
     def test_profiles_without_accounts_are_excluded_from_search(self):
         with portal.get_db() as db:

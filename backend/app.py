@@ -315,6 +315,28 @@ def create_student():
     return jsonify({"error": "Create your profile through account registration."}), 410
 
 
+def course_key(value):
+    """Ignore spacing and hyphens consistently for discovery and matching."""
+    return re.sub(r"[\s-]+", "", value).upper()
+
+
+@app.route("/api/courses")
+def suggest_courses():
+    query = course_key(request.args.get("q", ""))
+    if not query or len(query) > 30:
+        return jsonify({"courses": []})
+    with get_db() as db:
+        rows = db.execute(f"""
+            SELECT DISTINCT regexp_replace(UPPER(c.course_code), '[[:space:]-]+', '', 'g') AS code
+            FROM completed_courses c
+            JOIN students s ON s.id = c.student_id
+            WHERE {registered_student_sql()}
+              AND starts_with(regexp_replace(UPPER(c.course_code), '[[:space:]-]+', '', 'g'), %s)
+            ORDER BY code LIMIT 10
+        """, (query,)).fetchall()
+    return jsonify({"courses": [re.sub(r"^([A-Z]+)(\d)", r"\1 \2", row["code"]) for row in rows]})
+
+
 @app.route("/api/students/search")
 def search_students():
     course = request.args.get("course", "").strip().upper()
@@ -337,10 +359,10 @@ def search_students():
                 SELECT 1
                 FROM completed_courses c
                 WHERE c.student_id = s.id
-                  AND UPPER(c.course_code) = %s
+                  AND regexp_replace(UPPER(c.course_code), '[[:space:]-]+', '', 'g') = %s
             )
         """)
-        parameters.append(course)
+        parameters.append(course_key(course))
 
     if available != "false":
         conditions.append("s.willing_to_advise = true")

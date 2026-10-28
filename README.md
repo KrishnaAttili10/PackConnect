@@ -33,6 +33,7 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Register an account with email, password, and a student profile. Passwords are hashed; emails remain private. Advising is optional.
 - Create and edit profiles with completed/current courses, skills, and advice topics. Only the signed-in owner can edit their profile; the API rejects unauthenticated or non-owner updates.
 - Search by course code (for example, `CSC 510`) and filter by program, year, skills, advice topics, and advising availability.
+- Course search suggests up to ten matching codes from registered students' completed courses as you type. Select with the mouse or Arrow keys and Enter; Escape dismisses suggestions. Manual entry remains available, including when suggestions cannot load. Search treats `CSC510`, `csc 510`, and `CSC-510` alike. Suggestions reflect self-reported course histories, not an official university catalog; course titles are not yet stored. See [behavior and verification](docs/COURSE_AUTOCOMPLETE.md).
 - Search lists registered students only, including confirmed Supabase Auth users linked through `students.auth_user_id` and accounts registered in this app. Profiles without a linked registered account are excluded from results. By default, results include students who opted in to advise; turning off the availability filter also includes registered students who are not currently advising.
 - Send persistent advice requests, view incoming/outgoing requests, and accept or decline as the recipient.
 - View a student's profile, including program, year, bio, interests, and completed courses (as returned by the API).
@@ -167,6 +168,7 @@ Open that URL in your browser. **The frontend is the actual website; port 5000 s
 | GET | `/api/health` | Returns `{"status":"ok"}` |
 | POST | `/api/auth/register` | Creates an account and student profile; returns 201, 400 for invalid input, or 409 for a duplicate email |
 | GET | `/api/students/search?course=CSC%20510` | Finds opted-in students who completed the specified course |
+| GET | `/api/courses?q=CSC` | Suggests up to ten distinct completed-course codes matching a prefix; case, spaces, and hyphens are ignored |
 | GET | `/api/students/1` | Retrieves a student's full profile |
 | GET / POST | `/api/requests` | List your requests or create one for another registered advisor |
 | PATCH | `/api/requests/1` | Recipient accepts/declines a pending request |
