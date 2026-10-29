@@ -4,6 +4,7 @@ import { ConnectionRequestForm, RequestInbox, Conversation } from './Messaging'
 import { useRequests } from './useRequests'
 import NotificationBell from './NotificationBell'
 import CourseAutocomplete from './CourseAutocomplete'
+import { availabilityLabel, capacityLabel } from './advisorAvailability'
 
 const API_URL = ''
 
@@ -18,6 +19,8 @@ const emptyProfile = {
   completed_courses: '',
   current_courses: '',
   willing_to_advise: true,
+  max_open_requests: 5,
+  pause_until: '',
 }
 
 const emptyFilters = {
@@ -167,7 +170,8 @@ function App({ user, onLogout, route, onUserUpdated }) {
 
     return (
       hasCourseMatch &&
-      (!filters.availableOnly || student.willing_to_advise) &&
+      (!filters.availableOnly ||
+        (student.accepting_requests ?? student.willing_to_advise)) &&
       containsFilter(student.program, filters.program) &&
       containsFilter(student.year, filters.year) &&
       containsFilter(student.skills, filters.skills) &&
@@ -190,6 +194,11 @@ function App({ user, onLogout, route, onUserUpdated }) {
       completed_courses: coursesToText(student.completed_courses),
       current_courses: coursesToText(student.current_courses),
       willing_to_advise: Boolean(student.willing_to_advise),
+      max_open_requests:
+        student.max_open_requests === null
+          ? ''
+          : (student.max_open_requests ?? 5),
+      pause_until: student.pause_until || '',
     })
     window.location.hash = '/app/profile/edit'
     setError('')
@@ -223,6 +232,11 @@ function App({ user, onLogout, route, onUserUpdated }) {
       ),
       completed_courses: textToCourses(profileForm.completed_courses),
       current_courses: textToCourses(profileForm.current_courses),
+      max_open_requests:
+        profileForm.max_open_requests === ''
+          ? null
+          : Number(profileForm.max_open_requests),
+      pause_until: profileForm.pause_until || null,
     }
 
     try {
@@ -328,6 +342,11 @@ function App({ user, onLogout, route, onUserUpdated }) {
           completed_courses: coursesToText(student.completed_courses),
           current_courses: coursesToText(student.current_courses),
           willing_to_advise: Boolean(student.willing_to_advise),
+          max_open_requests:
+            student.max_open_requests === null
+              ? ''
+              : (student.max_open_requests ?? 5),
+          pause_until: student.pause_until || '',
         })
       } catch (err) {
         if (!controller.signal.aborted) {
@@ -678,6 +697,56 @@ function App({ user, onLogout, route, onUserUpdated }) {
                   Available to give advice
                 </label>
 
+                <label>
+                  Maximum open advice requests
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    step="1"
+                    aria-label="Maximum open advice requests"
+                    value={profileForm.max_open_requests}
+                    placeholder="No limit"
+                    aria-describedby="capacity-help"
+                    onChange={(event) =>
+                      updateProfileField(
+                        'max_open_requests',
+                        event.target.value,
+                      )
+                    }
+                  />
+                  <span id="capacity-help" className="profile-note">
+                    Pending and accepted incoming requests count. Leave blank
+                    for no limit. Complete advice in Requests to free a slot.
+                  </span>
+                </label>
+                <div>
+                  <label>
+                    Pause new requests until
+                    <input
+                      type="date"
+                      value={profileForm.pause_until}
+                      aria-label="Pause new requests until"
+                      aria-describedby="pause-help"
+                      onChange={(event) =>
+                        updateProfileField('pause_until', event.target.value)
+                      }
+                    />
+                    <span id="pause-help" className="profile-note">
+                      New requests resume at the start of this date in Eastern
+                      time, if you are advising and have space.
+                    </span>
+                  </label>
+                  {profileForm.pause_until && (
+                    <button
+                      type="button"
+                      onClick={() => updateProfileField('pause_until', '')}
+                    >
+                      Clear pause
+                    </button>
+                  )}
+                </div>
+
                 <div className="form-actions wide-field">
                   <button
                     type="button"
@@ -741,11 +810,13 @@ function App({ user, onLogout, route, onUserUpdated }) {
                       </p>
                     )}
 
-                    <span className="available-badge">
-                      {student.willing_to_advise
-                        ? '✓ Willing to share advice'
-                        : 'Not currently available'}
+                    <span
+                      className="available-badge"
+                      data-availability={student.availability_status}
+                    >
+                      {availabilityLabel(student)}
                     </span>
+                    <p className="profile-note">{capacityLabel(student)}</p>
 
                     <a
                       className="profile-button peer-profile-link"
@@ -873,14 +944,22 @@ function App({ user, onLogout, route, onUserUpdated }) {
                     Edit Profile
                   </button>
                 )}
+                <p
+                  className="available-badge"
+                  data-availability={selectedStudent.availability_status}
+                >
+                  {availabilityLabel(selectedStudent)}
+                </p>
+                <p className="profile-note">{capacityLabel(selectedStudent)}</p>
               </div>
             </div>
             {selectedStudent.id !== user.id &&
               (() => {
                 const existing = requests.find(
                   (item) =>
-                    item.sender_id === selectedStudent.id ||
-                    item.recipient_id === selectedStudent.id,
+                    ['pending', 'accepted'].includes(item.status) &&
+                    (item.sender_id === selectedStudent.id ||
+                      item.recipient_id === selectedStudent.id),
                 )
                 if (existing?.status === 'accepted')
                   return (
@@ -908,10 +987,14 @@ function App({ user, onLogout, route, onUserUpdated }) {
                       requests. Connect with a registered student instead.
                     </p>
                   )
-                if (!selectedStudent.willing_to_advise)
+                if (!(
+                  selectedStudent.accepting_requests ??
+                  selectedStudent.willing_to_advise
+                ))
                   return (
                     <p className="profile-note">
-                      This student is not currently available for advice.
+                      {availabilityLabel(selectedStudent)}. Check back later or
+                      find another advisor.
                     </p>
                   )
                 return (

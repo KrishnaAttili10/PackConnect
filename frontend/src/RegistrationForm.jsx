@@ -248,6 +248,10 @@ export default function RegistrationForm({ apiUrl, onRegistered, onClose }) {
               />{' '}
               I’m willing to share advice with other students.
             </label>
+            <p className="profile-note">
+              Advisors start with five open advice slots. Change your limit or
+              pause new requests from My profile after signing in.
+            </p>
           </fieldset>
           {error && (
             <p className="error-message" role="alert">

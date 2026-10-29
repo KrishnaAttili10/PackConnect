@@ -216,10 +216,21 @@ export function RequestInbox({
                   {item.status === 'pending' && !incoming && (
                     <span className="profile-note">Waiting for a response</span>
                   )}
-                  {item.status === 'accepted' && (
+                  {['accepted', 'completed'].includes(item.status) && (
                     <a className="chat-open" href={`#/app/chat/${item.id}`}>
-                      Open chat
+                      {item.status === 'completed'
+                        ? 'View message history'
+                        : 'Open chat'}
                     </a>
+                  )}
+                  {item.status === 'accepted' && (
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => respond(item.id, 'completed')}
+                    >
+                      {busy === item.id ? 'Saving...' : 'Complete advice'}
+                    </button>
                   )}
                   {item.status === 'declined' && (
                     <span className="profile-note">Chat is unavailable</span>
@@ -322,7 +333,9 @@ export function Conversation({ requestId, user }) {
         {record && (
           <p>
             {record.course_code} · {record.advice_topic}{' '}
-            <span className="status-badge accepted">Connected</span>
+            <span className={`status-badge ${record.status}`}>
+              {record.status === 'completed' ? 'Completed' : 'Connected'}
+            </span>
           </p>
         )}
       </header>
@@ -370,30 +383,44 @@ export function Conversation({ requestId, user }) {
               ))
             )}
           </div>
-          <form className="chat-compose" onSubmit={send}>
-            <label htmlFor="chat-message">Message to {peerName}</label>
-            <textarea
-              id="chat-message"
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              maxLength={2000}
-              rows={3}
-              placeholder="Write a message..."
-              disabled={sending}
-              required
-            />
-            <div>
-              <span>{body.length}/2000 · Updates automatically</span>
-              <button type="submit" disabled={sending || !body.trim()}>
-                {sending ? 'Sending...' : 'Send message'}
-              </button>
-            </div>
-            {sendError && (
-              <p className="error-message" role="alert">
-                {sendError}
+          {record.status === 'completed' ? (
+            <p role="status">
+              This advice is complete. Message history is read-only. You can
+              send a new request from the advisor’s profile when they are
+              available.
+            </p>
+          ) : (
+            <>
+              <p className="profile-note">
+                Finished? Use Complete advice in{' '}
+                <a href="#/app/requests">Requests</a> to free an advisor slot.
               </p>
-            )}
-          </form>
+              <form className="chat-compose" onSubmit={send}>
+                <label htmlFor="chat-message">Message to {peerName}</label>
+                <textarea
+                  id="chat-message"
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                  placeholder="Write a message..."
+                  disabled={sending}
+                  required
+                />
+                <div>
+                  <span>{body.length}/2000 · Updates automatically</span>
+                  <button type="submit" disabled={sending || !body.trim()}>
+                    {sending ? 'Sending...' : 'Send message'}
+                  </button>
+                </div>
+                {sendError && (
+                  <p className="error-message" role="alert">
+                    {sendError}
+                  </p>
+                )}
+              </form>
+            </>
+          )}
         </>
       )}
     </section>

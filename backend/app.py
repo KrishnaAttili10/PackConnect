@@ -10,10 +10,11 @@ from pathlib import Path
 from messaging import create_messaging_blueprint, initialize_messaging
 from database import connect_database
 from identity import registered_student_sql, session_student_id
+from availability import availability_payload, workload_join, availability_columns, availability_status_sql
 
 import os
 import secrets
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from dotenv import load_dotenv
 from supabase import create_client
 from supabase.lib.client_options import SyncClientOptions
@@ -40,7 +41,7 @@ supabase = (
 class PortalJSONProvider(DefaultJSONProvider):
     @staticmethod
     def default(value):
-        if isinstance(value, datetime):
+        if isinstance(value, date):
             return value.isoformat()
         return DefaultJSONProvider.default(value)
 
@@ -93,6 +94,7 @@ def profile_payload(data):
     if not isinstance(willing, bool):
         raise ValueError("Willing to advise must be true or false.")
     payload["willing_to_advise"] = willing
+    payload.update(availability_payload(data))
     return payload
 
 
@@ -111,10 +113,11 @@ def replace_courses(db, table_name, student_id, courses):
 
 
 def fetch_student(db, student_id):
-    student = db.execute("""
-        SELECT id, name, program, year, bio, interests, skills, advice_topics, willing_to_advise
-        FROM students
-        WHERE id = %s
+    student = db.execute(f"""
+        SELECT s.id, s.name, s.program, s.year, s.bio, s.interests, s.skills,
+               s.advice_topics, s.willing_to_advise, {availability_columns()}
+        FROM students s {workload_join()}
+        WHERE s.id = %s
     """, (student_id,)).fetchone()
 
     if student is None:
@@ -285,16 +288,20 @@ def register():
                    or len(course.strip()) > 30 for course in courses)):
         return jsonify({"error": "Provide up to 50 completed course codes, each at most 30 characters."}), 400
     courses = sorted({course.strip().upper() for course in courses})
+    try:
+        advising = {"max_open_requests": 5, "pause_until": None, **availability_payload(data)}
+    except ValueError as error:
+        return jsonify({"error": str(error)}), 400
     password_hash = generate_password_hash(password)
     try:
         with get_db() as db:
             if db.execute("SELECT 1 FROM auth.users WHERE lower(email) = %s", (email,)).fetchone():
                 return jsonify({"error": "An account with this email already exists."}), 409
             cursor = db.execute("""
-                INSERT INTO students (name, program, year, bio, interests, willing_to_advise)
-                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+                INSERT INTO students (name, program, year, bio, interests, willing_to_advise, max_open_requests, pause_until)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id
             """, (fields["name"], fields["program"], fields["year"],
-                  fields["bio"], fields["interests"], willing))
+                  fields["bio"], fields["interests"], willing, advising["max_open_requests"], advising["pause_until"]))
             student_id = cursor.fetchone()["id"]
             db.execute("""
                 INSERT INTO accounts (student_id, email, password_hash) VALUES (%s, %s, %s)
@@ -307,7 +314,7 @@ def register():
 
     return jsonify({"student": {"id": student_id, **{key: value for key, value in fields.items()
                                                     if key != "email"},
-                                "willing_to_advise": willing, "completed_courses": courses}}), 201
+                                "willing_to_advise": willing, "completed_courses": courses, **advising}}), 201
 
 
 @app.route("/api/students", methods=["POST"])
@@ -365,7 +372,7 @@ def search_students():
         parameters.append(course_key(course))
 
     if available != "false":
-        conditions.append("s.willing_to_advise = true")
+        conditions.append(f"({availability_status_sql()}) = 'available'")
 
     for column, value in (
         ("s.program", program),
@@ -388,8 +395,8 @@ def search_students():
                 s.year,
                 s.skills,
                 s.advice_topics,
-                s.willing_to_advise
-            FROM students s
+                s.willing_to_advise, {availability_columns()}
+            FROM students s {workload_join()}
             WHERE {where_clause}
             ORDER BY s.name
         """, parameters).fetchall()
@@ -435,9 +442,9 @@ def update_student(student_id):
 
     with get_db() as db:
         existing_student = db.execute("""
-            SELECT id
+            SELECT id, max_open_requests, pause_until
             FROM students
-            WHERE id = %s
+            WHERE id = %s FOR NO KEY UPDATE
         """, (student_id,)).fetchone()
 
         if existing_student is None:
@@ -452,7 +459,9 @@ def update_student(student_id):
                 interests = %s,
                 skills = %s,
                 advice_topics = %s,
-                willing_to_advise = %s
+                willing_to_advise = %s,
+                max_open_requests = %s,
+                pause_until = %s
             WHERE id = %s
         """, (
             payload["name"],
@@ -463,6 +472,8 @@ def update_student(student_id):
             payload["skills"],
             payload["advice_topics"],
             payload["willing_to_advise"],
+            payload.get("max_open_requests", existing_student["max_open_requests"]),
+            payload.get("pause_until", existing_student["pause_until"]),
             student_id,
         ))
 

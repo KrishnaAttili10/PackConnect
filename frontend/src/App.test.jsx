@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { deferred, response, student } from './test/fixtures'
+import { deferred, request, response, student } from './test/fixtures'
 
 // Keep App mounted as the real hash router does, including Cancel/Save navigation.
 function Workspace({ initialRoute = 'app', onUserUpdated = () => {} }) {
@@ -146,6 +146,71 @@ describe('peer search', () => {
 })
 
 describe('profile editor', () => {
+  it('persists capacity and pause settings with numeric and ISO-date values', async () => {
+    const user = userEvent.setup()
+    const normalFetch = fetch.getMockImplementation()
+    let saved = student
+    fetch.mockImplementation((url, options) => {
+      if (options?.method === 'PUT') {
+        saved = {
+          ...student,
+          ...JSON.parse(options.body),
+          availability_status: 'paused',
+          accepting_requests: false,
+        }
+        return Promise.resolve(response({ student: saved }))
+      }
+      if (url === '/api/students/1')
+        return Promise.resolve(response({ student: saved }))
+      return normalFetch(url, options)
+    })
+    render(<Workspace initialRoute="app/profile/edit" />)
+    const limit = await screen.findByRole('spinbutton', {
+      name: 'Maximum open advice requests',
+    })
+    await user.clear(limit)
+    await user.type(limit, '2')
+    fireEvent.change(screen.getByLabelText('Pause new requests until'), {
+      target: { value: '2027-01-15' },
+    })
+    await user.click(screen.getByRole('button', { name: 'Save Profile' }))
+    expect(JSON.parse(writes()[0][1].body)).toMatchObject({
+      max_open_requests: 2,
+      pause_until: '2027-01-15',
+    })
+    expect(
+      await screen.findByText('Paused until Jan 15, 2027 (Eastern time)'),
+    ).toBeInTheDocument()
+  })
+
+  it('clears a pause and saves an unlimited request capacity', async () => {
+    const user = userEvent.setup()
+    const normalFetch = fetch.getMockImplementation()
+    let saved = { ...student, pause_until: '2027-01-15' }
+    fetch.mockImplementation((url, options) => {
+      if (options?.method === 'PUT') {
+        saved = { ...student, ...JSON.parse(options.body) }
+        return Promise.resolve(response({ student: saved }))
+      }
+      if (url === '/api/students/1')
+        return Promise.resolve(response({ student: saved }))
+      return normalFetch(url, options)
+    })
+    render(<Workspace initialRoute="app/profile/edit" />)
+    await user.clear(
+      await screen.findByRole('spinbutton', {
+        name: 'Maximum open advice requests',
+      }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Clear pause' }))
+    await user.click(screen.getByRole('button', { name: 'Save Profile' }))
+    expect(JSON.parse(writes()[0][1].body)).toMatchObject({
+      max_open_requests: null,
+      pause_until: null,
+    })
+    expect(await screen.findByText('No request limit')).toBeInTheDocument()
+  })
+
   it('saves edited fields and prevents duplicate submissions while saving', async () => {
     const user = userEvent.setup()
     const pending = deferred()
@@ -241,6 +306,79 @@ describe('profile editor', () => {
 })
 
 describe('peer profile request controls', () => {
+  it.each([
+    ['paused', '2027-01-15', 'Paused until Jan 15, 2027 (Eastern time)'],
+    ['at_capacity', null, 'At capacity — not accepting new requests'],
+  ])(
+    'shows %s availability and prevents a new request',
+    async (status, until, label) => {
+      const normalFetch = fetch.getMockImplementation()
+      const peer = {
+        ...student,
+        id: 2,
+        accepting_requests: false,
+        availability_status: status,
+        pause_until: until,
+        max_open_requests: 2,
+        open_request_count: 2,
+      }
+      fetch.mockImplementation((url, options) =>
+        url === '/api/students/2'
+          ? Promise.resolve(response({ student: peer }))
+          : normalFetch(url, options),
+      )
+      render(<Workspace initialRoute="app/students/2" />)
+      expect(await screen.findByText(label)).toBeInTheDocument()
+      expect(screen.getByText('2 of 2 advice slots in use')).toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: 'Send request' }),
+      ).not.toBeInTheDocument()
+    },
+  )
+
+  it('preserves chat access when an existing advisor is paused or full', async () => {
+    const normalFetch = fetch.getMockImplementation()
+    fetch.mockImplementation((url, options) => {
+      if (url === '/api/students/2')
+        return Promise.resolve(
+          response({
+            student: {
+              ...student,
+              id: 2,
+              accepting_requests: false,
+              availability_status: 'at_capacity',
+            },
+          }),
+        )
+      if (url === '/api/requests')
+        return Promise.resolve(
+          response({ requests: [{ ...request, status: 'accepted' }] }),
+        )
+      return normalFetch(url, options)
+    })
+    render(<Workspace initialRoute="app/students/2" />)
+    expect(
+      await screen.findByRole('link', { name: 'Open chat' }),
+    ).toHaveAttribute('href', '#/app/chat/7')
+  })
+
+  it('permits a new request after a previous connection was completed', async () => {
+    const normalFetch = fetch.getMockImplementation()
+    fetch.mockImplementation((url, options) => {
+      if (url === '/api/students/2')
+        return Promise.resolve(response({ student: { ...student, id: 2 } }))
+      if (url === '/api/requests')
+        return Promise.resolve(
+          response({ requests: [{ ...request, status: 'completed' }] }),
+        )
+      return normalFetch(url, options)
+    })
+    render(<Workspace initialRoute="app/students/2" />)
+    expect(
+      await screen.findByRole('button', { name: 'Send request' }),
+    ).toBeInTheDocument()
+  })
+
   it('lets a student send a request to a registered advisor', async () => {
     const user = userEvent.setup()
     const peer = { ...student, id: 2, name: 'Registered Advisor' }

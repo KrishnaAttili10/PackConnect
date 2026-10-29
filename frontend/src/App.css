@@ -370,6 +370,15 @@ button {
   font-weight: 700;
 }
 
+.available-badge[data-availability='paused'],
+.available-badge[data-availability='at_capacity'],
+.available-badge[data-availability='not_advising'],
+.available-badge[data-availability='unregistered'],
+.status-badge.completed {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
 .profile-button {
   margin-top: auto;
   border: 1px solid #cc0000;

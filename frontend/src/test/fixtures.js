@@ -11,6 +11,11 @@ export const student = {
   current_courses: [],
   willing_to_advise: true,
   can_receive_requests: true,
+  accepting_requests: true,
+  availability_status: 'available',
+  max_open_requests: 5,
+  pause_until: null,
+  open_request_count: 0,
 }
 export const request = {
   id: 7,

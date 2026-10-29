@@ -5,6 +5,7 @@ from functools import wraps
 
 from flask import Blueprint, jsonify, request, session
 from identity import registered_student_sql, session_student_id
+from availability import advisor_availability
 
 
 def initialize_messaging(db):
@@ -35,14 +36,15 @@ def create_messaging_blueprint(get_db):
             return function(*args, **kwargs)
         return wrapped
 
-    def get_request(db, request_id):
+    def get_request(db, request_id, lock=False):
         row = db.execute("""
             SELECT r.*, s.name AS sender_name, t.name AS recipient_name
             FROM advice_requests r
             JOIN students s ON s.id = r.sender_id
             JOIN students t ON t.id = r.recipient_id
             WHERE r.id = %s AND (r.sender_id = %s OR r.recipient_id = %s)
-        """, (request_id, session["student_id"], session["student_id"])).fetchone()
+        """ + (" FOR UPDATE OF r" if lock else ""),
+                         (request_id, session["student_id"], session["student_id"])).fetchone()
         return dict(row) if row else None
 
     @api.route("/api/requests", methods=["GET"])
@@ -81,12 +83,18 @@ def create_messaging_blueprint(get_db):
             with get_db() as db:
                 recipient = db.execute(f"""
                     SELECT s.willing_to_advise, {registered_student_sql()} AS can_receive_requests
-                    FROM students s WHERE s.id = %s
+                    FROM students s WHERE s.id = %s FOR NO KEY UPDATE OF s
                 """, (recipient_id,)).fetchone()
                 if recipient is None:
                     return jsonify({"error": "Student not found."}), 404
                 if not recipient["willing_to_advise"] or not recipient["can_receive_requests"]:
                     return jsonify({"error": "This student cannot receive advice requests right now."}), 400
+                availability = advisor_availability(db, recipient_id)
+                if not availability["accepting_requests"]:
+                    message = (f"This advisor has paused new requests until {availability['pause_until'].isoformat()} (Eastern time)."
+                               if availability["availability_status"] == "paused"
+                               else "This advisor is at their open-request limit. Try another advisor or check back later.")
+                    return jsonify({"error": message}), 409
                 cursor = db.execute("""
                     INSERT INTO advice_requests
                     (sender_id, recipient_id, course_code, advice_topic, message)
@@ -106,12 +114,19 @@ def create_messaging_blueprint(get_db):
     @authenticated
     def respond(request_id):
         data = request.get_json(silent=True)
-        if not isinstance(data, dict) or data.get("status") not in ("accepted", "declined"):
-            return jsonify({"error": "Choose accepted or declined."}), 400
+        if not isinstance(data, dict) or data.get("status") not in ("accepted", "declined", "completed"):
+            return jsonify({"error": "Choose accepted, declined, or completed."}), 400
         with get_db() as db:
             record = get_request(db, request_id)
             if record is None:
                 return jsonify({"error": "Request not found."}), 404
+            db.execute("SELECT id FROM students WHERE id = %s FOR NO KEY UPDATE", (record["recipient_id"],))
+            record = get_request(db, request_id, lock=True)
+            if data["status"] == "completed":
+                if record["status"] not in ("accepted", "completed"):
+                    return jsonify({"error": "Only accepted advice can be completed."}), 409
+                db.execute("UPDATE advice_requests SET status = 'completed' WHERE id = %s", (request_id,))
+                return jsonify({"request": get_request(db, request_id)})
             if record["recipient_id"] != session["student_id"]:
                 return jsonify({"error": "Only the recipient can respond."}), 403
             changed = db.execute("UPDATE advice_requests SET status = %s WHERE id = %s AND status = 'pending'",
@@ -131,12 +146,14 @@ def create_messaging_blueprint(get_db):
     @authenticated
     def conversation(request_id):
         with get_db() as db:
-            record = get_request(db, request_id)
+            record = get_request(db, request_id, lock=True)
             if record is None:
                 return jsonify({"error": "Conversation not found."}), 404
-            if record["status"] != "accepted":
+            if record["status"] not in ("accepted", "completed"):
                 return jsonify({"error": "Chat unlocks when the request is accepted."}), 403
             if request.method == "POST":
+                if record["status"] == "completed":
+                    return jsonify({"error": "This advice is complete. Message history is read-only."}), 409
                 data = request.get_json(silent=True)
                 body = data.get("body") if isinstance(data, dict) else None
                 if not isinstance(body, str) or not body.strip() or len(body.strip()) > 2000:

@@ -16,6 +16,42 @@ async function fillRequest(user) {
 }
 
 describe('persistent advice requests', () => {
+  it('completes advice and keeps a link to saved message history', async () => {
+    const user = userEvent.setup()
+    const onRefresh = vi.fn()
+    fetch.mockResolvedValue(
+      response({ request: { ...request, status: 'completed' } }),
+    )
+    const props = {
+      user: student,
+      requests: [{ ...request, status: 'accepted' }],
+      loading: false,
+      error: '',
+      onRefresh,
+    }
+    const { rerender } = render(<RequestInbox {...props} />)
+    await user.click(screen.getByRole('button', { name: 'Complete advice' }))
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/requests/7',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'completed' }),
+      }),
+    )
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1))
+    rerender(
+      <RequestInbox
+        {...props}
+        requests={[{ ...request, status: 'completed' }]}
+      />,
+    )
+    expect(
+      screen.getByRole('link', { name: 'View message history' }),
+    ).toHaveAttribute('href', '#/app/chat/7')
+    expect(
+      screen.queryByRole('button', { name: 'Complete advice' }),
+    ).not.toBeInTheDocument()
+  })
   it('sends one request, disables pending controls and confirms that chat needs acceptance', async () => {
     const user = userEvent.setup()
     const pending = deferred()
@@ -187,6 +223,30 @@ describe('persistent advice requests', () => {
 })
 
 describe('accepted-request conversation', () => {
+  it('shows completed conversations as read-only while keeping their messages', async () => {
+    fetch.mockResolvedValue(
+      response({
+        request: { ...request, status: 'completed' },
+        messages: [
+          {
+            id: 1,
+            sender_id: 2,
+            body: 'Saved advice',
+            created_at: request.created_at,
+          },
+        ],
+        has_more: false,
+      }),
+    )
+    render(<Conversation requestId={7} user={student} />)
+    expect(await screen.findByText('Saved advice')).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Message history is read-only',
+    )
+    expect(
+      screen.queryByRole('button', { name: 'Send message' }),
+    ).not.toBeInTheDocument()
+  })
   it('loads saved history, sends once and displays the saved message', async () => {
     const user = userEvent.setup()
     const pending = deferred()

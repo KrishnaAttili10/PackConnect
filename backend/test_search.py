@@ -169,6 +169,7 @@ class SearchTests(PostgresTestCase):
     def test_search_returns_only_public_summary_fields(self):
         rows = self.search(course="CSC 510")
         self.assertTrue(rows)
-        expected = {"id", "name", "program", "year", "skills", "advice_topics", "willing_to_advise"}
+        expected = {"id", "name", "program", "year", "skills", "advice_topics", "willing_to_advise", "max_open_requests", "pause_until",
+                    "open_request_count", "availability_status", "accepting_requests"}
         for row in rows:
             self.assertEqual(set(row), expected)
