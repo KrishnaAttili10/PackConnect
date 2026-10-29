@@ -10,6 +10,10 @@ from pathlib import Path
 from messaging import create_messaging_blueprint, initialize_messaging
 from database import connect_database
 from identity import registered_student_sql, session_student_id
+from community import create_community_blueprint
+from meetings import create_meetings_blueprint
+from recovery import create_recovery_blueprint
+from lifecycle import lock_students
 from availability import availability_payload, workload_join, availability_columns, availability_status_sql
 
 import os
@@ -65,6 +69,9 @@ def get_db():
 
 
 app.register_blueprint(create_messaging_blueprint(get_db))
+app.register_blueprint(create_community_blueprint(get_db))
+app.register_blueprint(create_meetings_blueprint(get_db))
+app.register_blueprint(create_recovery_blueprint(get_db))
 
 
 def normalize_courses(courses):
@@ -113,12 +120,18 @@ def replace_courses(db, table_name, student_id, courses):
 
 
 def fetch_student(db, student_id):
+    viewer = session_student_id(db, session) if request and session.get("student_id") else None
     student = db.execute(f"""
         SELECT s.id, s.name, s.program, s.year, s.bio, s.interests, s.skills,
-               s.advice_topics, s.willing_to_advise, {availability_columns()}
+               s.advice_topics, s.willing_to_advise, {availability_columns()},
+               {registered_student_sql()} AS can_receive_requests,
+               EXISTS(SELECT 1 FROM staff_members WHERE student_id=s.id) AS is_moderator,
+               EXISTS(SELECT 1 FROM student_blocks WHERE blocker_id=%s AND blocked_id=s.id) AS blocked_by_me,
+               NOT EXISTS(SELECT 1 FROM student_blocks WHERE (blocker_id=%s AND blocked_id=s.id)
+                   OR (blocker_id=s.id AND blocked_id=%s)) AS contact_allowed
         FROM students s {workload_join()}
         WHERE s.id = %s
-    """, (student_id,)).fetchone()
+    """, (viewer, viewer, viewer, student_id)).fetchone()
 
     if student is None:
         return None
@@ -138,10 +151,6 @@ def fetch_student(db, student_id):
     """, (student_id,)).fetchall()
 
     profile = dict(student)
-    profile["can_receive_requests"] = bool(db.execute(
-        f"SELECT s.id FROM students s WHERE s.id = %s AND {registered_student_sql()}",
-        (student_id,),
-    ).fetchone())
     profile["completed_courses"] = [
         row["course_code"] for row in completed_courses
     ]
@@ -188,9 +197,10 @@ def login():
     email = email.strip().lower()
     with get_db() as db:
         account = db.execute(
-            "SELECT student_id, password_hash FROM accounts WHERE lower(email) = %s",
+            "SELECT a.student_id, a.password_hash, s.session_version FROM accounts a JOIN students s ON s.id=a.student_id WHERE lower(a.email) = %s",
             (email,),
         ).fetchone()
+        candidate = db.execute("SELECT s.id,s.session_version FROM students s JOIN auth.users u ON u.id=s.auth_user_id WHERE lower(u.email)=%s AND u.email_confirmed_at IS NOT NULL",(email,)).fetchone() if not account else account
     auth_user_id = None
     if account:
         if not check_password_hash(account["password_hash"], password):
@@ -231,12 +241,19 @@ def login():
             return jsonify({"error": "This account has no linked student profile. Contact the project team."}), 403
         student_id = linked["id"]
     with get_db() as db:
+        lock_students(db,student_id)
+        version = db.execute("SELECT session_version FROM students WHERE id=%s",(student_id,)).fetchone()
+        if not candidate or not version or version["session_version"] != candidate["session_version"]:
+            return jsonify(error="Your account changed during sign-in. Please try again."),401
+        if account and db.execute("SELECT password_hash FROM accounts WHERE student_id=%s",(student_id,)).fetchone()["password_hash"] != account["password_hash"]:
+            return jsonify(error="Your password changed during sign-in. Please try again."),401
         student = fetch_student(db, student_id)
     if student is None:
         return jsonify({"error": "This account has no student profile."}), 401
     session.clear()
     session.permanent = True
     session["student_id"] = student["id"]
+    session["auth_version"] = version["session_version"]
     if auth_user_id:
         session["auth_user_id"] = auth_user_id
     return jsonify({"student": student})
@@ -359,6 +376,10 @@ def search_students():
     # Include both local accounts and confirmed Supabase registrations.
     conditions = [registered_student_sql()]
     parameters = []
+    viewer = session.get("student_id")
+    if viewer:
+        conditions.append("NOT EXISTS (SELECT 1 FROM student_blocks b WHERE (b.blocker_id=%s AND b.blocked_id=s.id) OR (b.blocker_id=s.id AND b.blocked_id=%s))")
+        parameters.extend([viewer,viewer])
 
     if course:
         conditions.append("""

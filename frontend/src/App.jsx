@@ -3,6 +3,12 @@ import './App.css'
 import { ConnectionRequestForm, RequestInbox, Conversation } from './Messaging'
 import { useRequests } from './useRequests'
 import NotificationBell from './NotificationBell'
+import {
+  ConversationInbox,
+  SafetyControls,
+  BlockedStudents,
+  Moderation,
+} from './Community'
 import CourseAutocomplete from './CourseAutocomplete'
 import { availabilityLabel, capacityLabel } from './advisorAvailability'
 
@@ -411,6 +417,14 @@ function App({ user, onLogout, route, onUserUpdated }) {
           >
             My profile
           </a>
+          <a
+            href="#/app/conversations"
+            aria-current={route === 'app/conversations' ? 'page' : undefined}
+          >
+            Conversations
+          </a>
+          <a href="#/app/blocked">Blocked students</a>
+          {user.is_moderator && <a href="#/app/moderation">Report review</a>}
           <a href="#/about">About</a>
         </div>
       </nav>
@@ -425,6 +439,9 @@ function App({ user, onLogout, route, onUserUpdated }) {
             {notice}
           </div>
         )}
+        {route === 'app/conversations' && <ConversationInbox />}
+        {route === 'app/blocked' && <BlockedStudents />}
+        {route === 'app/moderation' && <Moderation />}
         {isSearchPage && (
           <section className="hero">
             <span className="eyebrow">STUDENT-TO-STUDENT SUPPORT</span>
@@ -839,7 +856,13 @@ function App({ user, onLogout, route, onUserUpdated }) {
         {!isSearchPage &&
           !profileId &&
           !chatId &&
-          !['app/requests', 'app/requests/outgoing'].includes(route) && (
+          ![
+            'app/requests',
+            'app/requests/outgoing',
+            'app/conversations',
+            'app/blocked',
+            'app/moderation',
+          ].includes(route) && (
             <div className="empty-state">
               <h2>Page not found</h2>
               <a href="#/app">Back to Find peers</a>
@@ -953,6 +976,21 @@ function App({ user, onLogout, route, onUserUpdated }) {
                 <p className="profile-note">{capacityLabel(selectedStudent)}</p>
               </div>
             </div>
+            {selectedStudent.id !== user.id && (
+              <SafetyControls
+                key={selectedStudent.id}
+                student={selectedStudent}
+                onChanged={async () => {
+                  const response = await fetch(
+                    `/api/students/${selectedStudent.id}`,
+                  )
+                  if (!response.ok)
+                    throw new Error('Could not refresh contact settings.')
+                  setSelectedStudent((await response.json()).student)
+                  await refreshRequests()
+                }}
+              />
+            )}
             {selectedStudent.id !== user.id &&
               (() => {
                 const existing = requests.find(
@@ -978,6 +1016,12 @@ function App({ user, onLogout, route, onUserUpdated }) {
                     <p className="profile-note">
                       A request is awaiting a response.{' '}
                       <a href="#/app/requests">View requests</a>
+                    </p>
+                  )
+                if (selectedStudent.contact_allowed === false)
+                  return (
+                    <p className="profile-note">
+                      Contact is unavailable for this student.
                     </p>
                   )
                 if (!selectedStudent.can_receive_requests)

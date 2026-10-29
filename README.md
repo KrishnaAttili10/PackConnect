@@ -42,6 +42,11 @@ See the [Step 1 baseline audit](docs/STEP_1_AUDIT.md) for verified behavior, lim
 - Get in-app bell notifications for incoming requests, request decisions, and new chat messages. Read/unread state is saved per account.
 - Chat privately after acceptance. Both participants can send messages of up to 2,000 characters, and conversations persist across visits. Open chats refresh every three seconds.
 
+New request and community tools include cancellation, seven-day expiration,
+a conversation inbox, block/report controls with moderator review, password
+recovery, and meeting proposals with calendar export. See [setup and behavior](docs/COMMUNITY_FEATURES.md),
+including SMTP configuration and moderator assignment.
+
 ## Tech stack
 
 | Layer | Technology |
@@ -245,7 +250,7 @@ Open a pull request on GitHub for team review before merging into `main`.
 
 ## Planned improvements
 
-- Password reset, email verification, and login rate limiting.
+- Email verification and login rate limiting (password recovery has its own rate limits).
 - Course completion reporting and richer course discovery.
 - Message read receipts, notifications, and conversation management.
 - Improved testing, validation, privacy, and deployment configuration.
@@ -289,8 +294,8 @@ Without it, development uses a fresh random key per process. Use HTTPS and set
 `COOKIE_SECURE=true` when deploying. The login gate controls frontend navigation;
 Profile updates require the signed-in owner. Standalone profile creation is
 retired (410); registration creates the account and its profile transactionally. Chat and advice requests require authentication
-and participant access. Password reset, email verification, and login rate
-limiting are not implemented in this change.
+and participant access. Email verification and login rate
+limiting remain planned. Password recovery is available after configuring SMTP; see [community setup](docs/COMMUNITY_FEATURES.md).
 
 ### Workspace pages
 
@@ -298,7 +303,11 @@ limiting are not implemented in this change.
 - `#/app/students/<id>`: A dedicated student profile, including an advice request form for registered advisors and chat links for existing connections.
 - `#/app/profile`: Your own profile, with an Edit Profile button.
 - `#/app/profile/edit`: Edit your own profile; Save persists changes and Cancel discards edits.
-- `#/app/requests`: Persistent Incoming and Outgoing requests, recipient accept/decline controls, and accepted conversation links.
+- `#/app/requests`: Incoming/Outgoing history, accept/decline, sender cancellation, expiration, and completion.
+- `#/app/conversations`: Conversation previews and unread counts.
+- `#/app/blocked`: Manage blocked students.
+- `#/app/moderation`: Report review for assigned moderators.
+- `#/forgot-password`: Request a password recovery email.
 
 Shared navigation includes a mobile menu. Profile links support refresh and
 browser Back/Forward. Profiles are created during registration; the search page

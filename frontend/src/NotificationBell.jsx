@@ -9,6 +9,12 @@ function describe(item) {
     return `${item.actor_name} accepted your request. You can now chat.`
   if (item.kind === 'declined')
     return `${item.actor_name} declined your request about ${item.course_code}.`
+  if (item.kind === 'expired')
+    return `Your advice request about ${item.course_code} expired.`
+  if (item.kind === 'cancelled')
+    return `${item.actor_name} cancelled their advice request.`
+  if (item.kind === 'meeting')
+    return `${item.actor_name} updated an advice meeting.`
   return `${item.actor_name} sent you a message.`
 }
 
@@ -145,7 +151,7 @@ export default function NotificationBell({ route }) {
       if (item) {
         setOpen(false)
         window.location.assign(
-          item.kind === 'accepted' || item.kind === 'message'
+          ['accepted', 'message', 'meeting'].includes(item.kind)
             ? `#/app/chat/${item.request_id}`
             : item.kind === 'declined'
               ? '#/app/requests/outgoing'

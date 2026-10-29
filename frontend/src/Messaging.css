@@ -197,3 +197,26 @@
     display: inline-block;
   }
 }
+
+.safety-controls,
+.meeting-panel {
+  margin: 24px 0;
+  padding: 20px;
+  border: 1px solid #ded8d1;
+  border-radius: 12px;
+}
+.safety-controls button,
+.meeting-panel button {
+  padding: 10px 14px;
+  margin: 6px 8px 6px 0;
+}
+.meeting-panel input,
+.safety-controls textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+}
+.meeting-panel a {
+  display: inline-block;
+  margin: 8px;
+}

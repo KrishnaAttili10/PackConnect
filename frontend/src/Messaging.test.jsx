@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { ConnectionRequestForm, RequestInbox, Conversation } from './Messaging'
 import { deferred, request, response, student } from './test/fixtures'
 
+vi.mock('./MeetingPanel', () => ({ default: () => null }))
+
 async function fillRequest(user) {
   await user.type(
     screen.getByRole('textbox', { name: 'Advice topic' }),
@@ -16,6 +18,33 @@ async function fillRequest(user) {
 }
 
 describe('persistent advice requests', () => {
+  it('lets the sender cancel a pending request and refreshes history', async () => {
+    const user = userEvent.setup()
+    const onRefresh = vi.fn()
+    fetch.mockResolvedValue(
+      response({ request: { ...request, status: 'cancelled' } }),
+    )
+    render(
+      <RequestInbox
+        user={student}
+        requests={[{ ...request, sender_id: student.id, recipient_id: 2 }]}
+        loading={false}
+        error=""
+        onRefresh={onRefresh}
+        initialTab="outgoing"
+      />,
+    )
+    await user.click(screen.getByRole('button', { name: 'Cancel request' }))
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/requests/7',
+      expect.objectContaining({
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'cancelled' }),
+      }),
+    )
+    await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1))
+  })
+
   it('completes advice and keeps a link to saved message history', async () => {
     const user = userEvent.setup()
     const onRefresh = vi.fn()

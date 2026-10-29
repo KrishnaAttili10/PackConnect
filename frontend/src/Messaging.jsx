@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, json } from './messagingApi'
 import './Messaging.css'
+import MeetingPanel from './MeetingPanel'
+import { ReportForm } from './Community'
 
 export function ConnectionRequestForm({
   student,
@@ -214,11 +216,27 @@ export function RequestInbox({
                     </>
                   )}
                   {item.status === 'pending' && !incoming && (
-                    <span className="profile-note">Waiting for a response</span>
+                    <>
+                      <span className="profile-note">
+                        Waiting for a response
+                        {item.expires_at
+                          ? ` · Expires ${new Date(item.expires_at).toLocaleString()}`
+                          : ''}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={busy !== null}
+                        onClick={() => respond(item.id, 'cancelled')}
+                      >
+                        Cancel request
+                      </button>
+                    </>
                   )}
-                  {['accepted', 'completed'].includes(item.status) && (
+                  {['accepted', 'completed', 'closed'].includes(
+                    item.status,
+                  ) && (
                     <a className="chat-open" href={`#/app/chat/${item.id}`}>
-                      {item.status === 'completed'
+                      {['completed', 'closed'].includes(item.status)
                         ? 'View message history'
                         : 'Open chat'}
                     </a>
@@ -253,6 +271,7 @@ export function Conversation({ requestId, user }) {
   const [sendError, setSendError] = useState('')
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
+  const [reportedMessage, setReportedMessage] = useState(null)
   const log = useRef(null)
   useEffect(() => {
     const controller = new AbortController()
@@ -334,7 +353,9 @@ export function Conversation({ requestId, user }) {
           <p>
             {record.course_code} · {record.advice_topic}{' '}
             <span className={`status-badge ${record.status}`}>
-              {record.status === 'completed' ? 'Completed' : 'Connected'}
+              {['completed', 'closed'].includes(record.status)
+                ? 'Closed'
+                : 'Connected'}
             </span>
           </p>
         )}
@@ -347,6 +368,21 @@ export function Conversation({ requestId, user }) {
       {loading && <p role="status">Loading conversation...</p>}
       {record && (
         <>
+          <MeetingPanel
+            key={requestId}
+            requestId={requestId}
+            user={user}
+            active={
+              record.status === 'accepted' && record.contact_allowed !== false
+            }
+          />
+          {reportedMessage && (
+            <ReportForm
+              studentId={reportedMessage.sender_id}
+              messageId={reportedMessage.id}
+              onClose={() => setReportedMessage(null)}
+            />
+          )}
           <p className="conversation-context">
             <strong>Original request:</strong> {record.message}
           </p>
@@ -373,6 +409,14 @@ export function Conversation({ requestId, user }) {
                     {item.sender_id === user.id ? 'You' : peerName}
                   </strong>
                   <p>{item.body}</p>
+                  {item.sender_id !== user.id && (
+                    <button
+                      type="button"
+                      onClick={() => setReportedMessage(item)}
+                    >
+                      Report message
+                    </button>
+                  )}
                   <time dateTime={item.created_at}>
                     {new Date(item.created_at).toLocaleTimeString([], {
                       hour: '2-digit',
@@ -383,11 +427,12 @@ export function Conversation({ requestId, user }) {
               ))
             )}
           </div>
-          {record.status === 'completed' ? (
+          {['completed', 'closed'].includes(record.status) ||
+          record.contact_allowed === false ? (
             <p role="status">
-              This advice is complete. Message history is read-only. You can
-              send a new request from the advisor’s profile when they are
-              available.
+              {record.status === 'closed' || record.contact_allowed === false
+                ? 'This connection is closed. Message history is read-only. Contact controls are available on the student’s profile.'
+                : 'This advice is complete. Message history is read-only. You can send a new request from the advisor’s profile when they are available.'}
             </p>
           ) : (
             <>

@@ -29,7 +29,7 @@ def availability_payload(data):
 def workload_join():
     return """LEFT JOIN LATERAL (
         SELECT COUNT(*) AS open_request_count FROM advice_requests
-        WHERE recipient_id = s.id AND status IN ('pending', 'accepted')
+        WHERE recipient_id = s.id AND (status = 'accepted' OR (status = 'pending' AND expires_at > CURRENT_TIMESTAMP))
     ) w ON true"""
 
 

@@ -18,10 +18,10 @@ def session_student_id(db, session):
         return None
     if session.get("auth_user_id"):
         row = db.execute("""
-            SELECT s.id FROM students s JOIN auth.users u ON u.id = s.auth_user_id
+            SELECT s.id, s.session_version FROM students s JOIN auth.users u ON u.id = s.auth_user_id
             WHERE s.id = %s AND u.id = %s AND u.email_confirmed_at IS NOT NULL
         """, (student_id, session["auth_user_id"])).fetchone()
     else:
-        row = db.execute("SELECT student_id AS id FROM accounts WHERE student_id = %s",
+        row = db.execute("SELECT s.id, s.session_version FROM accounts a JOIN students s ON s.id = a.student_id WHERE s.id = %s",
                          (student_id,)).fetchone()
-    return row["id"] if row else None
+    return row["id"] if row and row["session_version"] == session.get("auth_version", 0) else None

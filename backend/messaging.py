@@ -7,6 +7,7 @@ from contextlib import nullcontext
 from flask import Blueprint, g, jsonify, request, session
 from identity import registered_student_sql, session_student_id
 from availability import advisor_availability
+from lifecycle import blocked, expire_requests, lock_students, notify
 
 
 def initialize_messaging(db):
@@ -60,6 +61,7 @@ def create_messaging_blueprint(get_db):
     @authenticated
     def list_requests():
         with request_database() as db:
+            expire_requests(db, student_id=session["student_id"])
             rows = db.execute("""
                 SELECT r.*, s.name AS sender_name, t.name AS recipient_name
                 FROM advice_requests r
@@ -90,6 +92,10 @@ def create_messaging_blueprint(get_db):
         fields["course_code"] = fields["course_code"].upper()
         try:
             with request_database() as db:
+                lock_students(db, session["student_id"], recipient_id)
+                expire_requests(db, recipient_id=recipient_id)
+                if blocked(db, session["student_id"], recipient_id):
+                    return jsonify(error="Contact is unavailable for this student."), 403
                 recipient = db.execute(f"""
                     SELECT s.willing_to_advise, {registered_student_sql()} AS can_receive_requests
                     FROM students s WHERE s.id = %s FOR NO KEY UPDATE OF s
@@ -123,18 +129,29 @@ def create_messaging_blueprint(get_db):
     @authenticated
     def respond(request_id):
         data = request.get_json(silent=True)
-        if not isinstance(data, dict) or data.get("status") not in ("accepted", "declined", "completed"):
-            return jsonify({"error": "Choose accepted, declined, or completed."}), 400
+        if not isinstance(data, dict) or data.get("status") not in ("accepted", "declined", "completed", "cancelled"):
+            return jsonify({"error": "Choose accepted, declined, completed, or cancelled."}), 400
         with request_database() as db:
             record = get_request(db, request_id)
             if record is None:
                 return jsonify({"error": "Request not found."}), 404
-            db.execute("SELECT id FROM students WHERE id = %s FOR NO KEY UPDATE", (record["recipient_id"],))
+            lock_students(db, record["sender_id"], record["recipient_id"])
+            expire_requests(db, recipient_id=record["recipient_id"])
             record = get_request(db, request_id, lock=True)
+            if data["status"] == "cancelled":
+                if record["sender_id"] != session["student_id"]:
+                    return jsonify(error="Only the sender can cancel a pending request."),403
+                if record["status"] not in ("pending", "cancelled"):
+                    return jsonify(error="Only pending requests can be cancelled."),409
+                if record["status"] == "pending":
+                    db.execute("UPDATE advice_requests SET status='cancelled' WHERE id=%s",(request_id,))
+                    notify(db,record["recipient_id"],record["sender_id"],request_id,"cancelled",f"cancelled:{request_id}")
+                return jsonify(request=get_request(db,request_id))
             if data["status"] == "completed":
                 if record["status"] not in ("accepted", "completed"):
                     return jsonify({"error": "Only accepted advice can be completed."}), 409
                 db.execute("UPDATE advice_requests SET status = 'completed' WHERE id = %s", (request_id,))
+                db.execute("UPDATE advice_meetings SET status='cancelled' WHERE request_id=%s AND status IN ('proposed','accepted') AND ends_at>now()",(request_id,))
                 return jsonify({"request": get_request(db, request_id)})
             if record["recipient_id"] != session["student_id"]:
                 return jsonify({"error": "Only the recipient can respond."}), 403
@@ -155,13 +172,18 @@ def create_messaging_blueprint(get_db):
     @authenticated
     def conversation(request_id):
         with request_database() as db:
-            record = get_request(db, request_id, lock=True)
+            record = get_request(db, request_id)
             if record is None:
                 return jsonify({"error": "Conversation not found."}), 404
-            if record["status"] not in ("accepted", "completed"):
+            lock_students(db,record["sender_id"],record["recipient_id"])
+            record = get_request(db, request_id, lock=True)
+            contact_allowed = not blocked(db,record["sender_id"],record["recipient_id"])
+            if record["status"] not in ("accepted", "completed", "closed"):
                 return jsonify({"error": "Chat unlocks when the request is accepted."}), 403
             if request.method == "POST":
-                if record["status"] == "completed":
+                if not contact_allowed:
+                    return jsonify(error="Contact is unavailable for this student."),403
+                if record["status"] in ("completed", "closed"):
                     return jsonify({"error": "This advice is complete. Message history is read-only."}), 409
                 data = request.get_json(silent=True)
                 body = data.get("body") if isinstance(data, dict) else None
@@ -183,7 +205,13 @@ def create_messaging_blueprint(get_db):
                 SELECT * FROM chat_messages WHERE request_id = %s AND id > %s
                 ORDER BY id LIMIT 101
             """, (request_id, int(after_id))).fetchall()
-        return jsonify({"request": record, "messages": [dict(row) for row in rows[:100]], "has_more": len(rows) > 100})
+            visible = rows[:100]
+            if visible:
+                db.execute("""INSERT INTO conversation_reads(user_id,request_id,last_read_id) VALUES(%s,%s,%s)
+                    ON CONFLICT(user_id,request_id) DO UPDATE SET last_read_id=GREATEST(conversation_reads.last_read_id,EXCLUDED.last_read_id)""",
+                    (session["student_id"],request_id,visible[-1]["id"]))
+            record["contact_allowed"] = contact_allowed
+        return jsonify({"request": record, "messages": [dict(row) for row in visible], "has_more": len(rows) > 100})
 
     @api.route("/api/notifications", methods=["GET"])
     @authenticated

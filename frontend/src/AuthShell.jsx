@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import App from './App'
 import RegistrationForm from './RegistrationForm'
+import PasswordRecovery from './PasswordRecovery'
 import './AuthShell.css'
 
 const pages = {
@@ -38,11 +39,11 @@ const pages = {
       ],
       [
         'Storage and session cookies',
-        'The current backend stores accounts, profiles, and messages in its SQLite database. A session cookie keeps you signed in for up to eight hours. Requests, chat messages, notifications, and notification read status persist across visits in the backend database. No analytics or advertising trackers are added by this app.',
+        'The current backend stores accounts, profiles, and messages in Supabase PostgreSQL. A session cookie keeps you signed in for up to eight hours. Requests, chat messages, notifications, and notification read status persist across visits in the backend database. No analytics or advertising trackers are added by this app.',
       ],
       [
         'Prototype limitations and requests',
-        'This version has no automated account-deletion or password-reset flow. Contact the project maintainers through the repository for data questions, without posting passwords or personal records. Access controls and retention procedures are still being developed.',
+        'Password recovery is available when the project team configures an email sender. Automated account deletion is not available. Contact the project maintainers through the repository for data questions, without posting passwords or personal records. Access controls and retention procedures are still being developed.',
       ],
     ],
   },
@@ -126,7 +127,7 @@ export default function AuthShell() {
       window.location.hash = '/login'
     if (user && (route === 'login' || route === 'register'))
       window.location.hash = '/app'
-    document.title = `${pages[route]?.title || (route.startsWith('app/profile') ? 'My profile' : route.startsWith('app/students/') ? 'Student profile' : route.startsWith('app/chat/') ? 'Conversation' : route.startsWith('app/requests') ? 'Advice requests' : route === 'app' ? 'Find your people' : route === 'register' ? 'Create account' : 'Sign in')} | PackConnect`
+    document.title = `${pages[route]?.title || { 'app/conversations': 'Conversations', 'app/blocked': 'Blocked students', 'app/moderation': 'Report review', 'forgot-password': 'Recover account' }[route] || (route.startsWith('reset-password') ? 'Reset password' : route.startsWith('app/profile') ? 'My profile' : route.startsWith('app/students/') ? 'Student profile' : route.startsWith('app/chat/') ? 'Conversation' : route.startsWith('app/requests') ? 'Advice requests' : route === 'app' ? 'Find your people' : route === 'register' ? 'Create account' : 'Sign in')} | PackConnect`
   }, [route, user, checking])
 
   async function signIn(event) {
@@ -276,7 +277,14 @@ export default function AuthShell() {
             className={`auth-card ${route === 'register' ? 'auth-register-card' : ''}`}
             aria-label={route === 'register' ? 'Create account' : 'Sign in'}
           >
-            {route === 'register' ? (
+            {route === 'forgot-password' ||
+            route.startsWith('reset-password') ? (
+              <PasswordRecovery
+                key={route}
+                route={route}
+                onReset={() => setUser(null)}
+              />
+            ) : route === 'register' ? (
               <>
                 <a className="auth-back" href="#/login">
                   ← Back to sign in
@@ -322,6 +330,7 @@ export default function AuthShell() {
                       required
                     />
                     <label htmlFor="login-password">Password</label>
+                    <a href="#/forgot-password">Forgot password?</a>
                     <div className="auth-password">
                       <input
                         id="login-password"
