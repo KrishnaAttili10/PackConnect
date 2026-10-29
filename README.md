@@ -334,6 +334,14 @@ an update marks it read and opens the relevant inbox, outgoing request, or chat.
 **Mark all as read** clears the unread state for updates up to the latest loaded
 notification, preserving newer arrivals. Read state persists across visits.
 
+Read actions update the badge immediately, restore its prior state if saving
+fails, and receive the remaining unread count directly from the save response.
+They no longer wait for an additional notification fetch. The backend reuses a
+small connection pool and shares one connection between messaging authentication
+and its route. After pulling these changes, install `backend/requirements.txt`
+and restart Flask. No additional database migration is needed for this
+performance update. See [verification details](docs/NOTIFICATION_PERFORMANCE.md).
+
 Notifications refresh every five seconds while the app is open. No browser
 permission is needed; these are in-app alerts, not email or operating-system
 push notifications. Apply migrations before restarting Flask to prepare notification storage.

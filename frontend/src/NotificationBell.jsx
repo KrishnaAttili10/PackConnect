@@ -18,35 +18,67 @@ export default function NotificationBell({ route }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const actionBusy = useRef(false)
+  const revision = useRef(0)
+  const pollRequest = useRef(null)
+  const mounted = useRef(false)
   const root = useRef(null)
   const bell = useRef(null)
   const panel = useRef(null)
 
   useEffect(() => {
-    if (busy) return
-    const controller = new AbortController()
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    let stopped = false
+    let timer
+    let controller
     async function refresh() {
+      if (stopped) return
+      if (actionBusy.current) {
+        timer = setTimeout(refresh, 5000)
+        return
+      }
+      controller = new AbortController()
+      pollRequest.current = controller
+      const version = revision.current
       try {
         const data = await api('/api/notifications', {
           signal: controller.signal,
         })
-        if (!controller.signal.aborted) {
+        if (
+          !stopped &&
+          !controller.signal.aborted &&
+          version === revision.current
+        ) {
           setFeed(data)
           setError('')
         }
       } catch (err) {
-        if (!controller.signal.aborted) setError(err.message)
+        if (
+          !stopped &&
+          !controller.signal.aborted &&
+          version === revision.current
+        )
+          setError(err.message)
       } finally {
-        if (!controller.signal.aborted) setLoading(false)
+        if (!stopped) {
+          setLoading(false)
+          timer = setTimeout(refresh, 5000)
+        }
       }
     }
     refresh()
-    const timer = setInterval(refresh, 5000)
     return () => {
-      controller.abort()
-      clearInterval(timer)
+      stopped = true
+      controller?.abort()
+      clearTimeout(timer)
     }
-  }, [route, open, busy])
+  }, [route, open])
 
   useEffect(() => {
     if (!open) return
@@ -73,43 +105,61 @@ export default function NotificationBell({ route }) {
     }
   }, [open])
 
-  async function read(item) {
-    if (busy) return
+  async function markRead(item = null) {
+    if (
+      actionBusy.current ||
+      !feed.notifications.length ||
+      (!item && !feed.unread_count)
+    )
+      return
+    actionBusy.current = true
+    revision.current += 1
+    pollRequest.current?.abort()
     setBusy(true)
     setError('')
+    const previous = feed
+    const cutoff = feed.notifications[0].id
+    const now = new Date().toISOString()
+    setFeed({
+      ...feed,
+      notifications: feed.notifications.map((notification) =>
+        !notification.read_at &&
+        (item ? notification.id === item.id : notification.id <= cutoff)
+          ? { ...notification, read_at: now }
+          : notification,
+      ),
+      unread_count: item
+        ? Math.max(0, feed.unread_count - (item.read_at ? 0 : 1))
+        : 0,
+    })
     try {
-      await api(`/api/notifications/${item.id}/read`, { method: 'POST' })
-      const data = await api('/api/notifications')
-      setFeed(data)
-      setOpen(false)
-      window.location.assign(
-        item.kind === 'accepted' || item.kind === 'message'
-          ? `#/app/chat/${item.request_id}`
-          : item.kind === 'declined'
-            ? '#/app/requests/outgoing'
-            : '#/app/requests',
+      const data = await api(
+        item ? `/api/notifications/${item.id}/read` : '/api/notifications/read',
+        item ? { method: 'POST' } : json('POST', { through_id: cutoff }),
       )
+      if (!mounted.current) return
+      setFeed((current) => ({
+        ...current,
+        unread_count: data.unread_count ?? current.unread_count,
+      }))
+      if (item) {
+        setOpen(false)
+        window.location.assign(
+          item.kind === 'accepted' || item.kind === 'message'
+            ? `#/app/chat/${item.request_id}`
+            : item.kind === 'declined'
+              ? '#/app/requests/outgoing'
+              : '#/app/requests',
+        )
+      }
     } catch (err) {
-      setError(err.message)
+      if (mounted.current) {
+        setFeed(previous)
+        setError(err.message)
+      }
     } finally {
-      setBusy(false)
-    }
-  }
-
-  async function readAll() {
-    if (busy || !feed.notifications.length) return
-    setBusy(true)
-    setError('')
-    try {
-      await api(
-        '/api/notifications/read',
-        json('POST', { through_id: feed.notifications[0].id }),
-      )
-      setFeed(await api('/api/notifications'))
-    } catch (err) {
-      setError(err.message)
-    } finally {
-      setBusy(false)
+      actionBusy.current = false
+      if (mounted.current) setBusy(false)
     }
   }
 
@@ -196,7 +246,7 @@ export default function NotificationBell({ route }) {
                 <button
                   type="button"
                   disabled={busy || !feed.unread_count}
-                  onClick={readAll}
+                  onClick={() => markRead()}
                 >
                   Mark all as read
                 </button>
@@ -212,7 +262,7 @@ export default function NotificationBell({ route }) {
                           : 'notification-item unread'
                       }
                       disabled={busy}
-                      onClick={() => read(item)}
+                      onClick={() => markRead(item)}
                     >
                       <span className="notification-dot" aria-hidden="true" />
                       <span>

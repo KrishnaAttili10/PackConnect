@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+from contextlib import contextmanager
 
 import app as portal
 from postgres_test_support import PostgresTestCase
@@ -102,9 +104,29 @@ class NotificationTests(PostgresTestCase):
         cutoff = self.feed(self.recipient)["notifications"][0]["id"]
         self.recipient.patch(f"/api/requests/{request_id}", json={"status": "accepted"})
         self.sender.post(f"/api/requests/{request_id}/messages", json={"body": "New event"})
-        self.recipient.post("/api/notifications/read", json={"through_id": cutoff})
+        response = self.recipient.post("/api/notifications/read", json={"through_id": cutoff})
+        self.assertEqual(response.get_json()["unread_count"], 1)
         self.assertEqual(self.feed(self.recipient)["unread_count"], 1)
         self.assertEqual(self.feed(self.sender)["unread_count"], 1)
+
+    def test_read_endpoints_return_counts_using_one_database_checkout(self):
+        self.request()
+        item_id = self.feed(self.recipient)["notifications"][0]["id"]
+        original = portal.connect_database
+        checkouts = []
+        @contextmanager
+        def counted(*args, **kwargs):
+            checkouts.append(True)
+            with original(*args, **kwargs) as db:
+                yield db
+        for path, payload in [(f"/api/notifications/{item_id}/read", None),
+                              ("/api/notifications/read", {"through_id": item_id})]:
+            checkouts.clear()
+            with patch.object(portal, "connect_database", side_effect=counted):
+                response = self.recipient.post(path, json=payload)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["unread_count"], 0)
+            self.assertEqual(len(checkouts), 1)
 
     def test_bulk_read_validates_cutoff(self):
         for payload in [None, [], {}, {"through_id": True}, {"through_id": -1}, {"through_id": "1"}, {"through_id": 2**64}]:

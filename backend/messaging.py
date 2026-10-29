@@ -2,8 +2,9 @@
 
 from psycopg.errors import UniqueViolation
 from functools import wraps
+from contextlib import nullcontext
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request, session
 from identity import registered_student_sql, session_student_id
 from availability import advisor_availability
 
@@ -31,10 +32,18 @@ def create_messaging_blueprint(get_db):
         def wrapped(*args, **kwargs):
             with get_db() as db:
                 student_id = session_student_id(db, session)
-            if student_id is None:
-                return jsonify({"error": "Sign in to continue."}), 401
-            return function(*args, **kwargs)
+                if student_id is None:
+                    return jsonify({"error": "Sign in to continue."}), 401
+                g.messaging_db = db
+                try:
+                    return function(*args, **kwargs)
+                finally:
+                    g.pop("messaging_db", None)
         return wrapped
+
+    def request_database():
+        # Authentication and the route use one connection and transaction.
+        return nullcontext(g.messaging_db)
 
     def get_request(db, request_id, lock=False):
         row = db.execute("""
@@ -50,7 +59,7 @@ def create_messaging_blueprint(get_db):
     @api.route("/api/requests", methods=["GET"])
     @authenticated
     def list_requests():
-        with get_db() as db:
+        with request_database() as db:
             rows = db.execute("""
                 SELECT r.*, s.name AS sender_name, t.name AS recipient_name
                 FROM advice_requests r
@@ -80,7 +89,7 @@ def create_messaging_blueprint(get_db):
             fields[field] = value.strip()
         fields["course_code"] = fields["course_code"].upper()
         try:
-            with get_db() as db:
+            with request_database() as db:
                 recipient = db.execute(f"""
                     SELECT s.willing_to_advise, {registered_student_sql()} AS can_receive_requests
                     FROM students s WHERE s.id = %s FOR NO KEY UPDATE OF s
@@ -116,7 +125,7 @@ def create_messaging_blueprint(get_db):
         data = request.get_json(silent=True)
         if not isinstance(data, dict) or data.get("status") not in ("accepted", "declined", "completed"):
             return jsonify({"error": "Choose accepted, declined, or completed."}), 400
-        with get_db() as db:
+        with request_database() as db:
             record = get_request(db, request_id)
             if record is None:
                 return jsonify({"error": "Request not found."}), 404
@@ -145,7 +154,7 @@ def create_messaging_blueprint(get_db):
     @api.route("/api/requests/<int:request_id>/messages", methods=["GET", "POST"])
     @authenticated
     def conversation(request_id):
-        with get_db() as db:
+        with request_database() as db:
             record = get_request(db, request_id, lock=True)
             if record is None:
                 return jsonify({"error": "Conversation not found."}), 404
@@ -179,7 +188,7 @@ def create_messaging_blueprint(get_db):
     @api.route("/api/notifications", methods=["GET"])
     @authenticated
     def list_notifications():
-        with get_db() as db:
+        with request_database() as db:
             rows = db.execute("""
                 SELECT n.id, n.request_id, n.kind, n.read_at, n.created_at,
                        COALESCE(s.name, 'A student') AS actor_name, r.course_code
@@ -195,14 +204,19 @@ def create_messaging_blueprint(get_db):
     @api.route("/api/notifications/<int:notification_id>/read", methods=["POST"])
     @authenticated
     def read_notification(notification_id):
-        with get_db() as db:
-            changed = db.execute("""
-                UPDATE notifications SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
-                WHERE id = %s AND user_id = %s
-            """, (notification_id, session["student_id"])).rowcount
-            if not changed:
+        with request_database() as db:
+            result = db.execute("""
+                WITH marked AS (
+                    UPDATE notifications SET read_at = COALESCE(read_at, CURRENT_TIMESTAMP)
+                    WHERE id = %s AND user_id = %s RETURNING id
+                )
+                SELECT (SELECT count(*) FROM marked) AS changed,
+                       count(*) AS unread_count FROM notifications
+                WHERE user_id = %s AND read_at IS NULL AND id <> %s
+            """, (notification_id, session["student_id"], session["student_id"], notification_id)).fetchone()
+            if not result["changed"]:
                 return jsonify({"error": "Notification not found."}), 404
-        return jsonify({"status": "ok"})
+        return jsonify({"status": "ok", "unread_count": result["unread_count"]})
 
     @api.route("/api/notifications/read", methods=["POST"])
     @authenticated
@@ -211,11 +225,15 @@ def create_messaging_blueprint(get_db):
         through_id = data.get("through_id") if isinstance(data, dict) else None
         if type(through_id) is not int or not 0 <= through_id <= 9223372036854775807:
             return jsonify({"error": "Provide a valid notification ID cutoff."}), 400
-        with get_db() as db:
-            db.execute("""
-                UPDATE notifications SET read_at = CURRENT_TIMESTAMP
-                WHERE user_id = %s AND read_at IS NULL AND id <= %s
-            """, (session["student_id"], through_id))
-        return jsonify({"status": "ok"})
+        with request_database() as db:
+            result = db.execute("""
+                WITH marked AS (
+                    UPDATE notifications SET read_at = CURRENT_TIMESTAMP
+                    WHERE user_id = %s AND read_at IS NULL AND id <= %s RETURNING id
+                )
+                SELECT count(*) AS unread_count FROM notifications
+                WHERE user_id = %s AND read_at IS NULL AND id > %s
+            """, (session["student_id"], through_id, session["student_id"], through_id)).fetchone()
+        return jsonify({"status": "ok", "unread_count": result["unread_count"]})
 
     return api
